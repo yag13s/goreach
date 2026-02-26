@@ -1,0 +1,221 @@
+// Command goreach analyzes Go coverage data to identify unreached code paths.
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"golang.org/x/tools/cover"
+
+	"github.com/yag13s/goreach/internal/analysis"
+	"github.com/yag13s/goreach/internal/covparse"
+	"github.com/yag13s/goreach/internal/report"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(1)
+	}
+
+	switch os.Args[1] {
+	case "analyze":
+		if err := runAnalyze(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "goreach analyze: %v\n", err)
+			os.Exit(1)
+		}
+	case "summary":
+		if err := runSummary(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "goreach summary: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "goreach: unknown command %q\n", os.Args[1])
+		usage()
+		os.Exit(1)
+	}
+}
+
+func usage() {
+	fmt.Fprintln(os.Stderr, `Usage: goreach <command> [flags]
+
+Commands:
+  analyze   Analyze coverage data and output JSON report
+  summary   Print coverage summary as text`)
+}
+
+func runAnalyze(args []string) error {
+	fs := flag.NewFlagSet("analyze", flag.ExitOnError)
+	profilePath := fs.String("profile", "", "path to text coverage profile file")
+	coverDir := fs.String("coverdir", "", "GOCOVERDIR path (mutually exclusive with -profile)")
+	recursive := fs.Bool("r", false, "recursively search -coverdir for coverage data")
+	pkgFilter := fs.String("pkg", "", "package filter (comma-separated import path prefixes)")
+	threshold := fs.Float64("threshold", 100, "show functions with coverage below this percentage")
+	minStmts := fs.Int("min-statements", 0, "show functions with at least N unreached statements")
+	outputFile := fs.String("o", "", "output file (default: stdout)")
+	pretty := fs.Bool("pretty", false, "pretty-print JSON output")
+	fs.Parse(args)
+
+	if *profilePath == "" && *coverDir == "" {
+		return fmt.Errorf("either -profile or -coverdir is required")
+	}
+	if *profilePath != "" && *coverDir != "" {
+		return fmt.Errorf("-profile and -coverdir are mutually exclusive")
+	}
+
+	// Get profile text
+	var profileText string
+	var err error
+	if *profilePath != "" {
+		profileText, err = covparse.ParseProfileFile(*profilePath)
+	} else if *recursive {
+		profileText, err = covparse.ParseDirRecursive(*coverDir)
+	} else {
+		profileText, err = covparse.ParseDir(*coverDir)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Write profile to temp file for x/tools/cover parsing
+	tmpFile, err := os.CreateTemp("", "goreach-analyze-*.txt")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(profileText); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	profiles, err := cover.ParseProfiles(tmpFile.Name())
+	if err != nil {
+		return fmt.Errorf("parse profiles: %w", err)
+	}
+
+	var prefixes []string
+	if *pkgFilter != "" {
+		prefixes = strings.Split(*pkgFilter, ",")
+	}
+
+	opts := analysis.Options{
+		PkgPrefixes:   prefixes,
+		Threshold:     *threshold,
+		MinStatements: *minStmts,
+	}
+
+	rpt, err := analysis.Run(profiles, opts)
+	if err != nil {
+		return err
+	}
+	rpt.GeneratedAt = time.Now().UTC()
+
+	w := os.Stdout
+	if *outputFile != "" {
+		f, err := os.Create(*outputFile)
+		if err != nil {
+			return fmt.Errorf("create output file: %w", err)
+		}
+		defer f.Close()
+		w = f
+	}
+
+	return rpt.Write(w, *pretty)
+}
+
+func runSummary(args []string) error {
+	fs := flag.NewFlagSet("summary", flag.ExitOnError)
+	coverDir := fs.String("coverdir", "", "GOCOVERDIR path")
+	recursive := fs.Bool("r", false, "recursively search -coverdir for coverage data")
+	profilePath := fs.String("profile", "", "path to text coverage profile file")
+	fs.Parse(args)
+
+	if *profilePath == "" && *coverDir == "" {
+		return fmt.Errorf("either -profile or -coverdir is required")
+	}
+
+	var profileText string
+	var err error
+	if *profilePath != "" {
+		profileText, err = covparse.ParseProfileFile(*profilePath)
+	} else if *recursive {
+		profileText, err = covparse.ParseDirRecursive(*coverDir)
+	} else {
+		profileText, err = covparse.ParseDir(*coverDir)
+	}
+	if err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp("", "goreach-summary-*.txt")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(profileText); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	profiles, err := cover.ParseProfiles(tmpFile.Name())
+	if err != nil {
+		return fmt.Errorf("parse profiles: %w", err)
+	}
+
+	// Compute summary per package
+	type pkgStats struct {
+		total, covered int
+	}
+	stats := make(map[string]*pkgStats)
+	var overallTotal, overallCovered int
+	for _, p := range profiles {
+		pkg := strings.TrimSuffix(p.FileName, "/"+filepath.Base(p.FileName))
+		if stats[pkg] == nil {
+			stats[pkg] = &pkgStats{}
+		}
+		for _, b := range p.Blocks {
+			stats[pkg].total += b.NumStmt
+			overallTotal += b.NumStmt
+			if b.Count > 0 {
+				stats[pkg].covered += b.NumStmt
+				overallCovered += b.NumStmt
+			}
+		}
+	}
+
+	// Print summary
+	fmt.Printf("Coverage Summary\n")
+	fmt.Printf("================\n\n")
+
+	// Sort packages
+	pkgs := make([]string, 0, len(stats))
+	for p := range stats {
+		pkgs = append(pkgs, p)
+	}
+	sortStrings(pkgs)
+
+	for _, pkg := range pkgs {
+		s := stats[pkg]
+		pct := report.ComputePercent(s.covered, s.total)
+		fmt.Printf("  %-60s %5.1f%% (%d/%d)\n", pkg, pct, s.covered, s.total)
+	}
+
+	fmt.Printf("\n  %-60s %5.1f%% (%d/%d)\n", "TOTAL", report.ComputePercent(overallCovered, overallTotal), overallCovered, overallTotal)
+	return nil
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+}
