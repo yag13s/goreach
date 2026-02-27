@@ -1,10 +1,77 @@
 # goreach
 
-Go カバレッジ（到達性）計測・集約
+**稼働中の Go サービスで、実際に通っていないコードパスを特定する。**
 
-稼働中のシステムで実際に到達していないコードパスを特定する
-Go 1.20+ のネイティブカバレッジ機能（`go build -cover`, `GOCOVERDIR`）の上に薄いレイヤーを載せるだけ
-出力は JSON 形式
+Go のネイティブカバレッジ機能（`go build -cover` / `GOCOVERDIR`）の上に薄いレイヤーを載せ、未到達コードを JSON で可視化する。
+
+## アーキテクチャ
+
+```mermaid
+flowchart TB
+    subgraph App["計測対象アプリケーション"]
+        direction LR
+        BIN["go build -cover で<br/>ビルドしたバイナリ"]
+        SDK["flush SDK<br/><i>定期フラッシュ / HTTP / シグナル</i>"]
+        BIN --- SDK
+    end
+
+    subgraph Storage["ストレージ"]
+        direction LR
+        LOCAL["ローカルディスク"]
+        S3["S3 / GCS / etc."]
+    end
+
+    subgraph CLI["goreach CLI"]
+        direction TB
+        COVPARSE["covparse<br/><i>GOCOVERDIR → テキスト変換</i>"]
+        AST["astmap<br/><i>Go ソース AST 解析</i>"]
+        ANALYSIS["analysis<br/><i>カバレッジ × AST マッチング</i>"]
+        REPORT["report<br/><i>JSON 出力</i>"]
+        COVPARSE --> ANALYSIS
+        AST --> ANALYSIS
+        ANALYSIS --> REPORT
+    end
+
+    App -- "covmeta +<br/>covcounters" --> Storage
+    Storage -- "Download /<br/>Mount" --> CLI
+```
+
+### パッケージ構成
+
+```mermaid
+graph LR
+    subgraph cmd
+        MAIN["cmd/goreach"]
+    end
+
+    subgraph internal
+        COVPARSE["covparse"]
+        ASTMAP["astmap"]
+        ANALYSIS["analysis"]
+        REPORT["report"]
+    end
+
+    subgraph flush_pkg["flush (SDK)"]
+        FLUSH["flush"]
+        FLUSHHTTP["flush/flushhttp"]
+    end
+
+    MAIN --> COVPARSE
+    MAIN --> ANALYSIS
+    ANALYSIS --> ASTMAP
+    ANALYSIS --> REPORT
+    FLUSHHTTP -.->|optional| FLUSH
+```
+
+| パッケージ | 役割 | 外部依存 |
+|-----------|------|---------|
+| `cmd/goreach` | CLI エントリポイント（`analyze` / `summary`） | — |
+| `internal/covparse` | GOCOVERDIR バイナリ → テキスト変換 | — |
+| `internal/astmap` | Go ソースを AST 解析し関数境界を抽出 | — |
+| `internal/analysis` | カバレッジブロックと関数を突き合わせ | `golang.org/x/tools` |
+| `internal/report` | JSON レポート構造体と出力 | — |
+| `flush` | 計測対象アプリに組み込む SDK | — |
+| `flush/flushhttp` | HTTP 経由のカバレッジ制御（opt-in） | `net/http` |
 
 ## インストール
 
@@ -12,28 +79,7 @@ Go 1.20+ のネイティブカバレッジ機能（`go build -cover`, `GOCOVERDI
 go install github.com/yag13s/goreach/cmd/goreach@latest
 ```
 
-## アーキテクチャ
-
-```
-┌──────────────────────────────────────────────────┐
-│  Layer 1: flush ライブラリ（SDK）                   │
-│  計測対象アプリに組み込み、カバレッジを定期書き出し    │
-└────────────────────┬─────────────────────────────┘
-                     │ covmeta + covcounters
-                     ▼
-┌──────────────────────────────────────────────────┐
-│  Layer 2: ストレージ（S3 / ローカル等）              │
-│  ビルドバージョン単位でディレクトリ分離               │
-└────────────────────┬─────────────────────────────┘
-                     │ Download + Merge
-                     ▼
-┌──────────────────────────────────────────────────┐
-│  Layer 3: goreach CLI（分析）                      │
-│  マージ → AST 解析 → 未到達コード特定 → JSON 出力    │
-└──────────────────────────────────────────────────┘
-```
-
-## クイックスタート（コード変更ゼロ）
+## クイックスタート
 
 ```bash
 # 1. カバレッジ付きビルド
@@ -44,7 +90,7 @@ mkdir -p /tmp/coverage
 GOCOVERDIR=/tmp/coverage ./myserver
 
 # 3. プロセス停止（カバレッジ自動書き出し）
-kill -TERM <pid>
+kill -TERM $(pgrep myserver)
 
 # 4. 分析
 goreach analyze -coverdir /tmp/coverage -pretty
@@ -54,7 +100,7 @@ goreach analyze -coverdir /tmp/coverage -pretty
 
 ### `goreach analyze`
 
-GOCOVERDIR またはテキストプロファイルから未到達コードを分析し、JSON レポートを出力する
+GOCOVERDIR またはテキストプロファイルから未到達コードを分析し、JSON レポートを出力する。
 
 ```bash
 # GOCOVERDIR から分析（再帰探索）
@@ -76,14 +122,14 @@ goreach analyze -coverdir /var/coverage -r -o report.json
 | `-coverdir <dir>` | GOCOVERDIR パス（`-profile` と排他） | — |
 | `-r` | `-coverdir` 配下を再帰探索 | `false` |
 | `-pkg <prefixes>` | パッケージフィルタ（カンマ区切り） | 全パッケージ |
-| `-threshold <float>` | カバレッジがこの%以下の関数のみ表示 | `100`（全関数） |
+| `-threshold <float>` | カバレッジがこの % 以下の関数のみ表示 | `100`（全関数） |
 | `-min-statements <n>` | 未到達ステートメントが N 以上の関数のみ | `0` |
 | `-o <file>` | 出力ファイル | stdout |
 | `-pretty` | JSON を整形出力 | `false` |
 
 ### `goreach summary`
 
-カバレッジサマリをテキストで表示する
+カバレッジサマリをテキストで表示する。
 
 ```bash
 goreach summary -coverdir /var/coverage -r
@@ -129,15 +175,12 @@ goreach summary -profile coverage.txt
 }
 ```
 
-## flush ライブラリ（長時間実行プロセス向け SDK）
+## flush SDK
 
-長時間稼働するサーバーやバッチ処理でカバレッジデータを定期的にフラッシュするためのライブラリ
+長時間稼働するサーバーやバッチ処理で、カバレッジデータを定期的にフラッシュするためのライブラリ。
 
 ```go
 import "github.com/yag13s/goreach/flush"
-
-// HTTP エンドポイントも使う場合のみ追加
-import "github.com/yag13s/goreach/flush/flushhttp"
 ```
 
 ### 基本的な使い方
@@ -153,13 +196,13 @@ flush.Enable(flush.Config{
 defer flush.Stop()
 ```
 
-### Storage インターフェース（DI）
+`-cover` なしでビルドされたバイナリでも `flush` はパニックしない（no-op になる）。
 
-保存先はインターフェースで抽象化
-ビルトイン実装のほか、独自実装を注入可能
+### Storage インターフェース
+
+保存先はインターフェースで抽象化されている。ビルトイン実装のほか、独自実装を注入可能。
 
 ```go
-// Storage はカバレッジデータの保存先を抽象化する
 type Storage interface {
     Store(ctx context.Context, files []string, meta Metadata) error
 }
@@ -167,13 +210,10 @@ type Storage interface {
 
 **ビルトイン実装:**
 
-```go
-// ローカルディスク保存（GOCOVERDIR 互換）
-flush.LocalStorage{Dir: "/var/coverage/myserver"}
-
-// 標準出力に書き出し（デバッグ用）
-flush.WriterStorage{W: os.Stdout}
-```
+| 実装 | 用途 |
+|------|------|
+| `flush.LocalStorage{Dir: "..."}` | ローカルディスク保存（GOCOVERDIR 互換） |
+| `flush.WriterStorage{W: os.Stdout}` | `io.Writer` に書き出し（デバッグ用） |
 
 **S3 保存の例（利用者が実装）:**
 
@@ -206,10 +246,10 @@ func (s *S3Storage) Store(ctx context.Context, files []string, meta flush.Metada
 |------|-------------|--------|
 | 定期実行 | 常時稼働サーバー | `Config{Interval: 5 * time.Minute}` |
 | HTTP エンドポイント | k8s CronJob トリガー | `mux.Handle("/internal/coverage/", flushhttp.Handler())` |
-| シグナル | バッチ処理、非HTTP プロセス | `flush.HandleSignal(syscall.SIGUSR1)` |
+| シグナル | バッチ処理、非 HTTP プロセス | `flush.HandleSignal(syscall.SIGUSR1)` |
 | プロセス終了時 | 全プロセス共通 | `defer flush.Stop()` |
 
-### HTTP エンドポイント（`flush/flushhttp` パッケージ）
+### HTTP エンドポイント（opt-in）
 
 HTTP 経由でのカバレッジ制御が必要な場合のみインポートする。`flush` パッケージ本体は `net/http` に依存しない。
 
@@ -227,7 +267,7 @@ mux.Handle("/internal/coverage/", flushhttp.Handler())
 
 ## ワークフロー例
 
-### A: ローカル開発（コード変更ゼロ）
+### ローカル開発（コード変更ゼロ）
 
 ```bash
 go build -cover -covermode=set -o myserver ./cmd/myserver
@@ -238,7 +278,7 @@ kill -TERM $(pgrep myserver)
 goreach analyze -coverdir /tmp/coverage -pretty
 ```
 
-### B: k8s 本番環境（push 型 — S3 保存）
+### k8s 本番環境（push 型 — S3 保存）
 
 ```go
 func main() {
@@ -258,7 +298,7 @@ aws s3 sync s3://coverage-data/goreach/myserver/abc123/ /tmp/coverage/
 goreach analyze -coverdir /tmp/coverage -r -pretty
 ```
 
-### C: k8s 本番環境（CronJob トリガー型）
+### k8s 本番環境（CronJob トリガー型）
 
 ```go
 mux.Handle("/internal/coverage/", flushhttp.Handler())
@@ -276,7 +316,7 @@ spec:
         command: ["curl", "-X", "POST", "http://myserver:8080/internal/coverage/flush"]
 ```
 
-### D: バッチ処理
+### バッチ処理
 
 ```bash
 go build -cover -o mybatch ./cmd/mybatch
@@ -286,16 +326,16 @@ goreach analyze -coverdir /tmp/coverage -pretty
 
 ## 設計方針
 
-- `-cover` なしでビルドされたバイナリでも flush ライブラリはパニックしない（no-op）
-- flush パッケージは外部依存ゼロ（`runtime/coverage` + stdlib のみ、`net/http` 不要）
-- HTTP ハンドラは `flush/flushhttp` に分離。不要なら import しなければ `net/http` の依存も入らない
-- S3 等のクラウド SDK は利用者が持ち込む（Storage インターフェースで DI）
-- covmeta + covcounters のバイナリファイルをそのまま保存（テキスト変換は分析時に実施）
+- `flush` パッケージは外部依存ゼロ（`runtime/coverage` + stdlib のみ）
+- HTTP ハンドラは `flush/flushhttp` に分離 — 不要なら import しなければ `net/http` 依存も入らない
+- S3 等のクラウド SDK は利用者が持ち込む（`Storage` インターフェースで DI）
+- covmeta / covcounters のバイナリファイルをそのまま保存（テキスト変換は分析時に実施）
 - ビルドバージョンが変わると covmeta の互換性が壊れるため、バージョン単位でデータを分離
+- `-cover` なしでビルドされたバイナリでも `flush` はパニックしない（no-op）
 
 ## 必要要件
 
-- Go 1.20+
+- Go 1.26+
 - `go tool covdata`（Go ツールチェインに同梱）
 
 ## License
