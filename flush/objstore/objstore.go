@@ -16,7 +16,8 @@ import (
 )
 
 // Uploader uploads the contents of body to the given key.
-// The caller is responsible for closing body after Uploader returns.
+// The reader is only valid for the duration of the call; Storage.Store
+// closes it after Upload returns.
 type Uploader func(ctx context.Context, key string, body io.Reader) error
 
 // KeyFunc generates an object key for a given file and metadata.
@@ -34,6 +35,10 @@ var _ flush.Storage = (*Storage)(nil)
 
 // Store uploads each file in files via the configured [Uploader].
 func (s *Storage) Store(ctx context.Context, files []string, meta flush.Metadata) error {
+	if s.Upload == nil {
+		return fmt.Errorf("goreach/flush: objstore: Upload is nil")
+	}
+
 	prefix := s.Prefix
 	if prefix == "" {
 		prefix = "goreach"
@@ -51,10 +56,13 @@ func (s *Storage) Store(ctx context.Context, files []string, meta flush.Metadata
 
 		key := keyFn(prefix, meta, filepath.Base(f))
 		uploadErr := s.Upload(ctx, key, body)
-		body.Close()
+		closeErr := body.Close()
 
 		if uploadErr != nil {
 			return fmt.Errorf("goreach/flush: upload %s: %w", filepath.Base(f), uploadErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("goreach/flush: close %s: %w", filepath.Base(f), closeErr)
 		}
 	}
 	return nil

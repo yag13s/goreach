@@ -247,7 +247,9 @@ type Storage interface {
 
 ```go
 import (
+    // ...
     "github.com/yag13s/goreach/flush/objstore"
+    "github.com/aws/aws-sdk-go-v2/config"
     "github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -313,7 +315,13 @@ goreach view -src . report.json
 ### k8s 本番環境（push 型 — S3 保存）
 
 ```go
-import "github.com/yag13s/goreach/flush/objstore"
+import (
+    // ...
+    "github.com/yag13s/goreach/flush"
+    "github.com/yag13s/goreach/flush/objstore"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+)
 
 func main() {
     cfg, _ := config.LoadDefaultConfig(context.Background())

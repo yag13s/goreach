@@ -106,6 +106,9 @@ func TestStorage_Store_CustomPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if len(calls) != 1 {
+		t.Fatalf("Upload called %d times, want 1", len(calls))
+	}
 	wantKey := "custom/prefix/svc/v1/pod/covmeta.abc"
 	if calls[0].Key != wantKey {
 		t.Errorf("Key = %q, want %q", calls[0].Key, wantKey)
@@ -132,9 +135,23 @@ func TestStorage_Store_CustomKeyFunc(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if len(calls) != 1 {
+		t.Fatalf("Upload called %d times, want 1", len(calls))
+	}
 	wantKey := "flat/covmeta.abc"
 	if calls[0].Key != wantKey {
 		t.Errorf("Key = %q, want %q", calls[0].Key, wantKey)
+	}
+}
+
+func TestStorage_Store_NilUpload(t *testing.T) {
+	storage := &Storage{}
+	err := storage.Store(context.Background(), []string{"any"}, flush.Metadata{})
+	if err == nil {
+		t.Fatal("expected error for nil Upload")
+	}
+	if !strings.Contains(err.Error(), "nil") {
+		t.Errorf("error should mention nil, got: %v", err)
 	}
 }
 
