@@ -75,6 +75,7 @@ graph LR
 | `internal/viewer` | Web UI サーバー（`view` コマンド） | — |
 | `flush` | 計測対象アプリに組み込む SDK | — |
 | `flush/flushhttp` | HTTP 経由のカバレッジ制御（opt-in） | `net/http` |
+| `flush/objstore` | リモートストレージへのカバレッジ保存 | — |
 
 ## インストール
 
@@ -240,31 +241,33 @@ type Storage interface {
 |------|------|
 | `flush.LocalStorage{Dir: "..."}` | ローカルディスク保存（GOCOVERDIR 互換） |
 | `flush.WriterStorage{W: os.Stdout}` | `io.Writer` に書き出し（デバッグ用） |
+| `objstore.Storage{...}` | リモートオブジェクトストレージへアップロード |
 
-**S3 保存の例（利用者が実装）:**
+**リモート保存（`flush/objstore` パッケージ）:**
 
 ```go
-type S3Storage struct {
-    Client *s3.Client
-    Bucket string
-}
+import (
+    "github.com/yag13s/goreach/flush/objstore"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+)
 
-func (s *S3Storage) Store(ctx context.Context, files []string, meta flush.Metadata) error {
-    for _, f := range files {
-        key := fmt.Sprintf("goreach/%s/%s/%s/%s",
-            meta.ServiceName, meta.BuildVersion, meta.PodName, filepath.Base(f))
-        body, _ := os.Open(f)
-        defer body.Close()
-        _, err := s.Client.PutObject(ctx, &s3.PutObjectInput{
-            Bucket: &s.Bucket, Key: &key, Body: body,
+cfg, _ := config.LoadDefaultConfig(ctx)
+client := s3.NewFromConfig(cfg)
+bucket := "coverage-data"
+
+storage := &objstore.Storage{
+    Upload: func(ctx context.Context, key string, body io.Reader) error {
+        _, err := client.PutObject(ctx, &s3.PutObjectInput{
+            Bucket: &bucket, Key: &key, Body: body,
         })
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+        return err
+    },
+    // Prefix: "goreach"  （デフォルト）
+    // KeyFunc: nil        （デフォルト: <prefix>/<service>/<version>/<pod>/<file>）
 }
 ```
+
+`Uploader` は `func(ctx, key, body) error` なので、S3 以外（GCS, Azure Blob 等）にもそのまま使える。
 
 ### フラッシュのトリガー方式
 
@@ -310,9 +313,22 @@ goreach view -src . report.json
 ### k8s 本番環境（push 型 — S3 保存）
 
 ```go
+import "github.com/yag13s/goreach/flush/objstore"
+
 func main() {
+    cfg, _ := config.LoadDefaultConfig(context.Background())
+    client := s3.NewFromConfig(cfg)
+    bucket := "coverage-data"
+
     flush.Enable(flush.Config{
-        Storage:      &myS3Storage{Bucket: "coverage-data"},
+        Storage: &objstore.Storage{
+            Upload: func(ctx context.Context, key string, body io.Reader) error {
+                _, err := client.PutObject(ctx, &s3.PutObjectInput{
+                    Bucket: &bucket, Key: &key, Body: body,
+                })
+                return err
+            },
+        },
         ServiceName:  "myserver",
         BuildVersion: version,
         Interval:     10 * time.Minute,
@@ -357,7 +373,7 @@ goreach analyze -coverdir /tmp/coverage -pretty
 
 - `flush` パッケージは外部依存ゼロ（`runtime/coverage` + stdlib のみ）
 - HTTP ハンドラは `flush/flushhttp` に分離 — 不要なら import しなければ `net/http` 依存も入らない
-- S3 等のクラウド SDK は利用者が持ち込む（`Storage` インターフェースで DI）
+- `flush/objstore` はリモート保存のボイラープレート（キー生成・ファイル読み出し）を提供。クラウド SDK はユーザーが `Uploader` 経由で持ち込む
 - covmeta / covcounters のバイナリファイルをそのまま保存（テキスト変換は分析時に実施）
 - ビルドバージョンが変わると covmeta の互換性が壊れるため、バージョン単位でデータを分離
 - `-cover` なしでビルドされたバイナリでも `flush` はパニックしない（no-op）
