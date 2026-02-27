@@ -11,7 +11,7 @@ flowchart TB
     subgraph App["計測対象アプリケーション"]
         direction LR
         BIN["go build -cover で<br/>ビルドしたバイナリ"]
-        SDK["flush SDK<br/><i>定期フラッシュ / HTTP / シグナル</i>"]
+        SDK["flush SDK<br/><i>定期 / 手動 / HTTP / シグナル</i>"]
         BIN --- SDK
     end
 
@@ -204,7 +204,7 @@ goreach summary -profile coverage.txt
 
 ## flush SDK
 
-長時間稼働するサーバーやバッチ処理で、カバレッジデータを定期的にフラッシュするためのライブラリ。
+プロセス終了を待たずにカバレッジデータをフラッシュするためのライブラリ。常駐サーバー、Lambda、バッチ処理に対応。
 
 ```go
 import "github.com/yag13s/goreach/flush"
@@ -224,6 +224,8 @@ defer flush.Stop()
 ```
 
 `-cover` なしでビルドされたバイナリでも `flush` はパニックしない（no-op になる）。
+
+> **重要:** flush SDK を使う場合は `-covermode=atomic` でビルドすること。`runtime/coverage.WriteCountersDir` は実行中のプロセスからカウンタを安全に読み取るため atomic モードを要求する。`-covermode=set` でビルドするとフラッシュ時にエラーになる。
 
 ### Storage インターフェース
 
@@ -269,13 +271,14 @@ storage := &objstore.Storage{
 }
 ```
 
-`Uploader` は `func(ctx, key, body) error` なので、S3 以外（GCS, Azure Blob 等）にもそのまま使える。
+`Uploader` は `func(ctx, key, body) error` なので、S3 以外（GCS, Azure Blob 等）にもそのまま使えるはず
 
 ### フラッシュのトリガー方式
 
 | 方式 | ユースケース | コード |
 |------|-------------|--------|
 | 定期実行 | 常時稼働サーバー | `Config{Interval: 5 * time.Minute}` |
+| 手動呼び出し | Lambda 等リクエスト単位 | `flush.Emit()` |
 | HTTP エンドポイント | k8s CronJob トリガー | `mux.Handle("/internal/coverage/", flushhttp.Handler())` |
 | シグナル | バッチ処理、非 HTTP プロセス | `flush.HandleSignal(syscall.SIGUSR1)` |
 | プロセス終了時 | 全プロセス共通 | `defer flush.Stop()` |
@@ -298,7 +301,7 @@ mux.Handle("/internal/coverage/", flushhttp.Handler())
 
 ## ワークフロー例
 
-### ローカル開発（コード変更ゼロ）
+### ローカル開発
 
 ```bash
 go build -cover -covermode=set -o myserver ./cmd/myserver
@@ -308,11 +311,13 @@ GOCOVERDIR=/tmp/coverage ./myserver
 kill -TERM $(pgrep myserver)
 goreach analyze -coverdir /tmp/coverage -pretty -o report.json
 
-# ブラウザで確認（ソースプレビュー付き）
+# ブラウザで確認
 goreach view -src . report.json
 ```
 
 ### k8s 本番環境（push 型 — S3 保存）
+
+flush SDK を使うため `-covermode=atomic` でビルドすること。
 
 ```go
 import (
@@ -369,6 +374,41 @@ spec:
         command: ["curl", "-X", "POST", "http://myserver:8080/internal/coverage/flush"]
 ```
 
+### AWS Lambda
+
+Lambda はリクエスト間で実行環境がフリーズするため、定期フラッシュ（`Interval`）は機能しない。リクエストごとに `flush.Emit()` を呼ぶなどする
+
+```go
+// init() or main()
+flush.Enable(flush.Config{
+    Storage:      storage, // objstore.Storage 等
+    ServiceName:  "my-lambda",
+    BuildVersion: os.Getenv("BUILD_VERSION"),
+    Clear:        true,
+})
+
+// handler
+func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+    resp, err := process(ctx, req)
+    flush.Emit()
+    return resp, err
+}
+```
+
+**注意点:**
+- `-cover` ビルドではコンパイラがメタデータ書き出しを main パッケージの `init` に注入する。ユーザーの `init()` より先に走るため、`GOCOVERDIR` のディレクトリはプロセス起動前に存在している必要がある
+- `defer flush.Stop()` は不要（`lambda.Start()` は return しない）
+- リクエストごとに flush するためファイル数が多くなる。必要に応じて S3 上のファイルを定期的にマージすること
+
+```bash
+# ビルド例
+GOOS=linux GOARCH=arm64 go build -cover -covermode=atomic -o bootstrap.bin .
+printf '#!/bin/sh\nmkdir -p /tmp/coverage-data\nexec /var/task/bootstrap.bin "$@"\n' > bootstrap
+chmod +x bootstrap
+```
+
+環境変数: `GOCOVERDIR=/tmp/coverage-data`
+
 ### バッチ処理
 
 ```bash
@@ -379,9 +419,9 @@ goreach analyze -coverdir /tmp/coverage -pretty
 
 ## 設計方針
 
-- `flush` パッケージは外部依存ゼロ（`runtime/coverage` + stdlib のみ）
-- HTTP ハンドラは `flush/flushhttp` に分離 — 不要なら import しなければ `net/http` 依存も入らない
-- `flush/objstore` はリモート保存のボイラープレート（キー生成・ファイル読み出し）を提供。クラウド SDK はユーザーが `Uploader` 経由で持ち込む
+- `flush` パッケージは外部依存なし（`runtime/coverage` + stdlib のみ）
+- HTTP ハンドラは `flush/flushhttp` に分離
+- `flush/objstore` はリモート保存のボイラープレート（キー生成・ファイル読み出し）を提供
 - covmeta / covcounters のバイナリファイルをそのまま保存（テキスト変換は分析時に実施）
 - ビルドバージョンが変わると covmeta の互換性が壊れるため、バージョン単位でデータを分離
 - `-cover` なしでビルドされたバイナリでも `flush` はパニックしない（no-op）
@@ -389,7 +429,7 @@ goreach analyze -coverdir /tmp/coverage -pretty
 ## 必要要件
 
 - Go 1.26+
-- `go tool covdata`（Go ツールチェインに同梱）
+- `go tool covdata`
 
 ## License
 

@@ -39,7 +39,7 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleFlush(w http.ResponseWriter, r *http.Request) {
-	if err := flush.Flush(); err != nil {
+	if err := flush.Emit(); err != nil {
 		http.Error(w, fmt.Sprintf("goreach: flush failed: %v", err), http.StatusInternalServerError)
 		return
 	}

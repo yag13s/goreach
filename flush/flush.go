@@ -105,8 +105,8 @@ func Stop() {
 	_ = doFlush(s.cfg)
 }
 
-// Flush performs an immediate coverage data flush.
-func Flush() error {
+// Emit performs an immediate coverage data flush.
+func Emit() error {
 	mu.Lock()
 	s := state
 	if !enabled || s == nil {
