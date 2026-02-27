@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>goreach — Coverage Report</title>
+<style>
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface2: #334155;
+  --border: #475569;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --red: #ef4444;
+  --blue: #3b82f6;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+a { color: var(--blue); text-decoration: none; }
+h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+h2 {
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin: 2rem 0 1rem;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 1.5rem 2rem;
+}
+.gauge-container { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+.gauge-container svg { transform: rotate(-90deg); }
+.gauge-bg { fill: none; stroke: var(--surface2); stroke-width: 8; }
+.gauge-fill { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
+.gauge-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+.header-meta { color: var(--text-dim); font-size: 0.85rem; }
+.header-meta span { margin-right: 1.5rem; }
+
+/* Coverage bar */
+.cov-bar-wrap {
+  background: var(--surface2);
+  border-radius: 4px;
+  height: 8px;
+  flex: 1;
+  min-width: 60px;
+  overflow: hidden;
+}
+.cov-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.cov-pct { font-size: 0.85rem; min-width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Tree */
+details { margin-left: 1rem; }
+details > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+details > summary:hover { background: var(--surface); }
+details > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.15s;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+.pkg-name, .file-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name { font-weight: 400; }
+.func-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0.5rem 0.25rem 2.5rem;
+  font-size: 0.9rem;
+  border-radius: 4px;
+}
+.func-row:hover { background: var(--surface); }
+.func-name { min-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.func-line { color: var(--text-dim); font-size: 0.8rem; min-width: 50px; }
+.func-stmts { color: var(--text-dim); font-size: 0.8rem; min-width: 70px; }
+.unreached-block {
+  padding: 0.15rem 0.5rem 0.15rem 4rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* Tables */
+.dead-table, .partial-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.dead-table th, .partial-table th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.dead-table td, .partial-table td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--surface2);
+}
+.dead-table tr:hover td, .partial-table tr:hover td { background: var(--surface); }
+
+.tag-dead {
+  background: rgba(239,68,68,0.15);
+  color: var(--red);
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.tag-partial {
+  background: rgba(234,179,8,0.15);
+  color: var(--yellow);
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+#loading {
+  text-align: center;
+  padding: 4rem;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+}
+#error-msg {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid var(--red);
+  color: var(--red);
+  padding: 1rem;
+  border-radius: 8px;
+  display: none;
+}
+
+/* Source preview */
+.source-preview {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.8rem;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0.25rem 0 0.5rem 4rem;
+  padding: 0.5rem 0;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.source-line {
+  display: flex;
+  padding: 0 0.75rem;
+  white-space: pre;
+}
+.source-line.unreached {
+  background: rgba(239,68,68,0.1);
+}
+.line-num {
+  color: var(--text-dim);
+  min-width: 3.5em;
+  text-align: right;
+  padding-right: 1em;
+  user-select: none;
+  opacity: 0.6;
+}
+.unreached-block.clickable {
+  cursor: pointer;
+}
+.unreached-block.clickable:hover {
+  color: var(--text);
+}
+.expand-icon {
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.15s;
+  margin-right: 0.25rem;
+}
+.expand-icon.open {
+  transform: rotate(90deg);
+}
+.source-loading {
+  padding: 0.5rem 1rem;
+  color: var(--text-dim);
+  margin-left: 4rem;
+  font-size: 0.8rem;
+}
+</style>
+</head>
+<body>
+<div id="loading">Loading report…</div>
+<div id="error-msg"></div>
+<div id="app" style="display:none">
+  <div class="header" id="header"></div>
+  <h2>Packages / Files / Functions</h2>
+  <div id="packages"></div>
+  <h2>Dead Code Candidates <span id="dead-count" style="color:var(--text-dim);font-weight:400"></span></h2>
+  <div id="dead-code"></div>
+  <h2>Partial Coverage <span id="partial-count" style="color:var(--text-dim);font-weight:400"></span></h2>
+  <div id="partial"></div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  function covColor(pct) {
+    if (pct >= 100) return 'var(--green)';
+    if (pct > 0)   return 'var(--yellow)';
+    return 'var(--red)';
+  }
+
+  function fmt(n) { return Number(n).toFixed(1); }
+
+  function barHTML(pct) {
+    return '<div class="cov-bar-wrap"><div class="cov-bar" style="width:' +
+      Math.min(pct, 100) + '%;background:' + covColor(pct) + '"></div></div>' +
+      '<span class="cov-pct" style="color:' + covColor(pct) + '">' + fmt(pct) + '%</span>';
+  }
+
+  function gaugeHTML(pct) {
+    var r = 42, c = 2 * Math.PI * r;
+    var offset = c - (Math.min(pct, 100) / 100) * c;
+    return '<div class="gauge-container">' +
+      '<svg width="100" height="100" viewBox="0 0 100 100">' +
+      '<circle class="gauge-bg" cx="50" cy="50" r="' + r + '"/>' +
+      '<circle class="gauge-fill" cx="50" cy="50" r="' + r + '" ' +
+      'stroke="' + covColor(pct) + '" stroke-dasharray="' + c + '" ' +
+      'stroke-dashoffset="' + offset + '"/></svg>' +
+      '<div class="gauge-text" style="color:' + covColor(pct) + '">' + fmt(pct) + '%</div></div>';
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderHeader(rpt) {
+    var t = rpt.total;
+    var pct = t.coverage_percent;
+    var at = rpt.generated_at ? new Date(rpt.generated_at).toLocaleString() : '—';
+    document.getElementById('header').innerHTML =
+      gaugeHTML(pct) +
+      '<div style="flex:1">' +
+      '<h1>goreach Coverage Report</h1>' +
+      '<div class="header-meta">' +
+      '<span>Statements: ' + t.covered_statements + ' / ' + t.total_statements + '</span>' +
+      '<span>Mode: ' + esc(rpt.mode || '—') + '</span>' +
+      '<span>Generated: ' + esc(at) + '</span>' +
+      '</div></div>';
+  }
+
+  function mergeAdjacentBlocks(blocks) {
+    if (!blocks || blocks.length === 0) return [];
+    var sorted = blocks.slice().sort(function(a, b) { return a.start_line - b.start_line; });
+    var merged = [{ start_line: sorted[0].start_line, end_line: sorted[0].end_line, num_statements: sorted[0].num_statements }];
+    for (var i = 1; i < sorted.length; i++) {
+      var prev = merged[merged.length - 1];
+      if (sorted[i].start_line <= prev.end_line + 1) {
+        prev.end_line = Math.max(prev.end_line, sorted[i].end_line);
+        prev.num_statements += sorted[i].num_statements;
+      } else {
+        merged.push({ start_line: sorted[i].start_line, end_line: sorted[i].end_line, num_statements: sorted[i].num_statements });
+      }
+    }
+    return merged;
+  }
+
+  function sortByPctAsc(arr) {
+    return arr.slice().sort(function(a, b) { return a.coverage_percent - b.coverage_percent; });
+  }
+
+  function renderPackages(pkgs) {
+    var el = document.getElementById('packages');
+    if (!pkgs || pkgs.length === 0) { el.innerHTML = '<p style="color:var(--text-dim)">No packages.</p>'; return; }
+
+    var html = '';
+    var sorted = sortByPctAsc(pkgs.map(function(p) { return {data: p, coverage_percent: p.total.coverage_percent}; }));
+
+    sorted.forEach(function(item) {
+      var p = item.data;
+      var pt = p.total;
+      html += '<details><summary><span class="pkg-name">' + esc(p.import_path) + '</span>' +
+        barHTML(pt.coverage_percent) + '</summary>';
+
+      var files = sortByPctAsc(p.files.map(function(f) { return {data: f, coverage_percent: f.total.coverage_percent}; }));
+      files.forEach(function(fi) {
+        var f = fi.data;
+        var ft = f.total;
+        html += '<details style="margin-left:2rem"><summary><span class="file-name">' + esc(f.file_name) + '</span>' +
+          barHTML(ft.coverage_percent) + '</summary>';
+
+        var funcs = sortByPctAsc(f.functions.map(function(fn) { return {data: fn, coverage_percent: fn.coverage_percent}; }));
+        funcs.forEach(function(fi2) {
+          var fn = fi2.data;
+          html += '<div class="func-row">' +
+            '<span class="func-name" style="color:' + covColor(fn.coverage_percent) + '">' + esc(fn.name) + '</span>' +
+            '<span class="func-line">L' + fn.line + '</span>' +
+            barHTML(fn.coverage_percent) +
+            '<span class="func-stmts">' + fn.covered_statements + '/' + fn.total_statements + ' stmts</span></div>';
+
+          if (fn.unreached_blocks && fn.unreached_blocks.length > 0) {
+            mergeAdjacentBlocks(fn.unreached_blocks).forEach(function(b) {
+              if (sourceAvailable) {
+                html += '<div class="unreached-block clickable" data-file="' + esc(f.file_name) +
+                  '" data-start="' + b.start_line + '" data-end="' + b.end_line +
+                  '"><span class="expand-icon">▸</span>L' + b.start_line + '–L' + b.end_line +
+                  ' (' + b.num_statements + ' stmts)</div>';
+              } else {
+                html += '<div class="unreached-block">L' + b.start_line + '–L' + b.end_line +
+                  ' (' + b.num_statements + ' stmts)</div>';
+              }
+            });
+          }
+        });
+        html += '</details>';
+      });
+      html += '</details>';
+    });
+    el.innerHTML = html;
+  }
+
+  function collectFuncs(pkgs) {
+    var all = [];
+    (pkgs || []).forEach(function(p) {
+      (p.files || []).forEach(function(f) {
+        (f.functions || []).forEach(function(fn) {
+          all.push({pkg: p.import_path, file: f.file_name, fn: fn});
+        });
+      });
+    });
+    return all;
+  }
+
+  function renderDeadCode(pkgs) {
+    var funcs = collectFuncs(pkgs).filter(function(x) { return x.fn.coverage_percent === 0; });
+    funcs.sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
+
+    document.getElementById('dead-count').textContent = '(' + funcs.length + ')';
+    var el = document.getElementById('dead-code');
+
+    if (funcs.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-dim)">No dead code candidates found.</p>';
+      return;
+    }
+
+    var html = '<table class="dead-table"><thead><tr>' +
+      '<th>Location</th><th>Function</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
+    funcs.forEach(function(x) {
+      html += '<tr><td>' + esc(x.file) + ':' + x.fn.line + '</td>' +
+        '<td>' + esc(x.fn.name) + '()</td>' +
+        '<td>' + x.fn.total_statements + '</td>' +
+        '<td><span class="tag-dead">0%</span></td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function renderPartial(pkgs) {
+    var rows = [];
+    collectFuncs(pkgs).forEach(function(x) {
+      var fn = x.fn;
+      if (fn.coverage_percent > 0 && fn.coverage_percent < 100 && fn.unreached_blocks) {
+        fn.unreached_blocks.forEach(function(b) {
+          rows.push({file: x.file, fn: fn, block: b});
+        });
+      }
+    });
+    rows.sort(function(a, b) { return b.block.num_statements - a.block.num_statements; });
+
+    document.getElementById('partial-count').textContent = '(' + rows.length + ' blocks)';
+    var el = document.getElementById('partial');
+
+    if (rows.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-dim)">No partial coverage blocks found.</p>';
+      return;
+    }
+
+    var html = '<table class="partial-table"><thead><tr>' +
+      '<th>Location</th><th>Function</th><th>Lines</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
+    rows.forEach(function(x) {
+      html += '<tr><td>' + esc(x.file) + ':' + x.block.start_line + '</td>' +
+        '<td>' + esc(x.fn.name) + '()</td>' +
+        '<td>L' + x.block.start_line + '–L' + x.block.end_line + '</td>' +
+        '<td>' + x.block.num_statements + '</td>' +
+        '<td><span class="tag-partial">' + fmt(x.fn.coverage_percent) + '%</span></td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  var sourceAvailable = false;
+
+  Promise.all([
+    fetch('/api/report').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+    fetch('/api/capabilities').then(function(r) { return r.ok ? r.json() : {source_preview: false}; })
+  ])
+    .then(function(results) {
+      var rpt = results[0];
+      var caps = results[1];
+      sourceAvailable = caps.source_preview === true;
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      renderHeader(rpt);
+      renderPackages(rpt.packages);
+      renderDeadCode(rpt.packages);
+      renderPartial(rpt.packages);
+    })
+    .catch(function(err) {
+      document.getElementById('loading').style.display = 'none';
+      var el = document.getElementById('error-msg');
+      el.style.display = 'block';
+      el.textContent = 'Failed to load report: ' + err.message;
+    });
+
+  function toggleSource(blockEl) {
+    var existing = blockEl.nextElementSibling;
+    if (existing && existing.classList.contains('source-preview')) {
+      existing.remove();
+      blockEl.querySelector('.expand-icon').classList.remove('open');
+      return;
+    }
+
+    var icon = blockEl.querySelector('.expand-icon');
+    icon.classList.add('open');
+
+    if (blockEl.getAttribute('data-loaded')) {
+      // Re-insert cached HTML
+      var div = document.createElement('div');
+      div.className = 'source-preview';
+      div.innerHTML = blockEl.getAttribute('data-loaded');
+      blockEl.after(div);
+      return;
+    }
+
+    var loadingEl = document.createElement('div');
+    loadingEl.className = 'source-loading';
+    loadingEl.textContent = 'Loading source…';
+    blockEl.after(loadingEl);
+
+    var file = blockEl.getAttribute('data-file');
+    var start = blockEl.getAttribute('data-start');
+    var end = blockEl.getAttribute('data-end');
+
+    fetch('/api/source?file=' + encodeURIComponent(file) + '&start=' + start + '&end=' + end)
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        loadingEl.remove();
+        var html = '';
+        data.lines.forEach(function(l) {
+          html += '<div class="source-line' + (l.unreached ? ' unreached' : '') + '">' +
+            '<span class="line-num">' + l.number + '</span>' +
+            '<span>' + esc(l.text) + '</span></div>';
+        });
+        blockEl.setAttribute('data-loaded', html);
+        var div = document.createElement('div');
+        div.className = 'source-preview';
+        div.innerHTML = html;
+        blockEl.after(div);
+      })
+      .catch(function(err) {
+        loadingEl.textContent = 'Failed to load source: ' + err.message;
+      });
+  }
+
+  document.addEventListener('click', function(e) {
+    var block = e.target.closest('.unreached-block[data-file]');
+    if (block) toggleSource(block);
+  });
+})();
+</script>
+</body>
+</html>

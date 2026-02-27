@@ -49,6 +49,7 @@ graph LR
         ASTMAP["astmap"]
         ANALYSIS["analysis"]
         REPORT["report"]
+        VIEWER["viewer"]
     end
 
     subgraph flush_pkg["flush (SDK)"]
@@ -58,6 +59,7 @@ graph LR
 
     MAIN --> COVPARSE
     MAIN --> ANALYSIS
+    MAIN --> VIEWER
     ANALYSIS --> ASTMAP
     ANALYSIS --> REPORT
     FLUSHHTTP -.->|optional| FLUSH
@@ -65,11 +67,12 @@ graph LR
 
 | パッケージ | 役割 | 外部依存 |
 |-----------|------|---------|
-| `cmd/goreach` | CLI エントリポイント（`analyze` / `summary`） | — |
+| `cmd/goreach` | CLI エントリポイント（`analyze` / `summary` / `view`） | — |
 | `internal/covparse` | GOCOVERDIR バイナリ → テキスト変換 | — |
 | `internal/astmap` | Go ソースを AST 解析し関数境界を抽出 | — |
 | `internal/analysis` | カバレッジブロックと関数を突き合わせ | `golang.org/x/tools` |
 | `internal/report` | JSON レポート構造体と出力 | — |
+| `internal/viewer` | Web UI サーバー（`view` コマンド） | — |
 | `flush` | 計測対象アプリに組み込む SDK | — |
 | `flush/flushhttp` | HTTP 経由のカバレッジ制御（opt-in） | `net/http` |
 
@@ -126,6 +129,29 @@ goreach analyze -coverdir /var/coverage -r -o report.json
 | `-min-statements <n>` | 未到達ステートメントが N 以上の関数のみ | `0` |
 | `-o <file>` | 出力ファイル | stdout |
 | `-pretty` | JSON を整形出力 | `false` |
+
+### `goreach view`
+
+レポート JSON をブラウザで表示する Web UI サーバーを起動する。
+
+```bash
+# 基本
+goreach view report.json
+
+# ソースコードプレビュー付き（unreached block をクリックで展開）
+goreach view -src ./myproject report.json
+
+# ポート指定・ブラウザ自動オープン無効化
+goreach view -port 8888 -no-open report.json
+```
+
+| フラグ | 説明 | デフォルト |
+|--------|------|-----------|
+| `-src <dir>` | ソースルートディレクトリ（コードプレビュー有効化） | —（無効） |
+| `-port <n>` | HTTP ポート | `0`（ランダム） |
+| `-no-open` | ブラウザの自動オープンを無効化 | `false` |
+
+`-src` を指定すると、Web UI 上の unreached block をクリックしてソースコードをインライン展開できる。隣接するブロックは自動的にマージされて一続きで表示される。`-src` 未指定時は従来通り行番号のみの表示。
 
 ### `goreach summary`
 
@@ -275,7 +301,10 @@ mkdir -p /tmp/coverage
 GOCOVERDIR=/tmp/coverage ./myserver
 # テスト実行後にプロセス停止
 kill -TERM $(pgrep myserver)
-goreach analyze -coverdir /tmp/coverage -pretty
+goreach analyze -coverdir /tmp/coverage -pretty -o report.json
+
+# ブラウザで確認（ソースプレビュー付き）
+goreach view -src . report.json
 ```
 
 ### k8s 本番環境（push 型 — S3 保存）

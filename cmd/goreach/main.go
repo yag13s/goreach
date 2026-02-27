@@ -14,6 +14,7 @@ import (
 	"github.com/yag13s/goreach/internal/analysis"
 	"github.com/yag13s/goreach/internal/covparse"
 	"github.com/yag13s/goreach/internal/report"
+	"github.com/yag13s/goreach/internal/viewer"
 )
 
 func main() {
@@ -33,6 +34,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "goreach summary: %v\n", err)
 			os.Exit(1)
 		}
+	case "view":
+		if err := runView(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "goreach view: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "goreach: unknown command %q\n", os.Args[1])
 		usage()
@@ -45,7 +51,45 @@ func usage() {
 
 Commands:
   analyze   Analyze coverage data and output JSON report
-  summary   Print coverage summary as text`)
+  summary   Print coverage summary as text
+  view      Open report.json in browser UI`)
+}
+
+func runView(args []string) error {
+	fs := flag.NewFlagSet("view", flag.ExitOnError)
+	reportPath := fs.String("report", "", "path to report.json")
+	port := fs.Int("port", 0, "HTTP port (0 = random available)")
+	noOpen := fs.Bool("no-open", false, "do not auto-open browser")
+	srcDir := fs.String("src", "", "source root directory for code preview")
+	fs.Parse(args)
+
+	// positional fallback: goreach view report.json
+	path := *reportPath
+	if path == "" && fs.NArg() > 0 {
+		path = fs.Arg(0)
+	}
+	if path == "" {
+		return fmt.Errorf("report path required")
+	}
+
+	opts := viewer.Options{Port: *port, NoOpen: *noOpen}
+
+	if *srcDir != "" {
+		abs, err := filepath.Abs(*srcDir)
+		if err != nil {
+			return fmt.Errorf("resolve -src path: %w", err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("-src directory: %w", err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("-src %q is not a directory", abs)
+		}
+		opts.SrcDir = abs
+	}
+
+	return viewer.Serve(path, opts)
 }
 
 func runAnalyze(args []string) error {
