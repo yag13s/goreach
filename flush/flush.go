@@ -192,10 +192,17 @@ func doFlush(cfg Config) error {
 	}
 
 	hostname, _ := os.Hostname()
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		podName = hostname
+	}
+	if podName == "" {
+		podName = "unknown"
+	}
 	meta := Metadata{
 		Timestamp:    time.Now(),
 		Hostname:     hostname,
-		PodName:      os.Getenv("POD_NAME"),
+		PodName:      podName,
 		BuildVersion: cfg.BuildVersion,
 		ServiceName:  cfg.ServiceName,
 	}
