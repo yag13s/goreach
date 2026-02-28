@@ -4,6 +4,12 @@ import (
 	"testing"
 )
 
+func TestVersionDefault(t *testing.T) {
+	if version != "dev" {
+		t.Errorf("default version = %q, want %q", version, "dev")
+	}
+}
+
 func TestSortStrings(t *testing.T) {
 	tests := []struct {
 		name  string

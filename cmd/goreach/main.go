@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -17,6 +18,16 @@ import (
 	"github.com/yag13s/goreach/internal/viewer"
 )
 
+var version = "dev"
+
+func init() {
+	if version == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			version = info.Main.Version
+		}
+	}
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -24,6 +35,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "version":
+		fmt.Printf("goreach %s\n", version)
 	case "analyze":
 		if err := runAnalyze(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "goreach analyze: %v\n", err)
@@ -52,7 +65,8 @@ func usage() {
 Commands:
   analyze   Analyze coverage data and output JSON report
   summary   Print coverage summary as text
-  view      Open report.json in browser UI`)
+  view      Open report.json in browser UI
+  version   Print version information`)
 }
 
 func runView(args []string) error {

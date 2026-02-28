@@ -17,6 +17,7 @@
   --red: #ef4444;
   --blue: #3b82f6;
 }
+html { scroll-behavior: smooth; }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
@@ -62,6 +63,40 @@ h2 {
 .header-meta { color: var(--text-dim); font-size: 0.85rem; }
 .header-meta span { margin-right: 1.5rem; }
 
+/* Summary cards */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.summary-card {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  text-align: center;
+  border: 1px solid var(--surface2);
+  transition: border-color 0.2s;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.summary-card:hover { border-color: var(--border); }
+.card-count { font-size: 1.8rem; font-weight: 700; line-height: 1.2; }
+.card-label { font-size: 0.85rem; color: var(--text-dim); margin-top: 0.15rem; }
+.card-detail { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; }
+@media (max-width: 768px) {
+  .summary-cards { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Section divider */
+.section-divider {
+  border-top: 2px solid var(--surface2);
+  padding-top: 0.5rem;
+  margin-top: 2.5rem;
+}
+
 /* Coverage bar */
 .cov-bar-wrap {
   background: var(--surface2);
@@ -97,7 +132,8 @@ details > summary::before {
   transition: transform 0.15s;
 }
 details[open] > summary::before { transform: rotate(90deg); }
-.pkg-name, .file-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkg-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name { font-weight: 600; flex: 1; }
 .file-name { font-weight: 400; }
 .func-row {
   display: flex;
@@ -108,7 +144,7 @@ details[open] > summary::before { transform: rotate(90deg); }
   border-radius: 4px;
 }
 .func-row:hover { background: var(--surface); }
-.func-name { min-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.func-name { min-width: 180px; }
 .func-line { color: var(--text-dim); font-size: 0.8rem; min-width: 50px; }
 .func-stmts { color: var(--text-dim); font-size: 0.8rem; min-width: 70px; }
 .unreached-block {
@@ -118,23 +154,23 @@ details[open] > summary::before { transform: rotate(90deg); }
 }
 
 /* Tables */
-.dead-table, .partial-table {
+.dead-table, .partial-table, .full-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
-.dead-table th, .partial-table th {
+.dead-table th, .partial-table th, .full-table th {
   text-align: left;
   color: var(--text-dim);
   font-weight: 600;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
-.dead-table td, .partial-table td {
+.dead-table td, .partial-table td, .full-table td {
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--surface2);
 }
-.dead-table tr:hover td, .partial-table tr:hover td { background: var(--surface); }
+.dead-table tr:hover td, .partial-table tr:hover td, .full-table tr:hover td { background: var(--surface); }
 
 .tag-dead {
   background: rgba(239,68,68,0.15);
@@ -151,6 +187,24 @@ details[open] > summary::before { transform: rotate(90deg); }
   border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 600;
+}
+.tag-full {
+  background: rgba(34,197,94,0.15);
+  color: var(--green);
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Group header */
+.group-header td {
+  background: var(--surface);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--blue);
 }
 
 #loading {
@@ -224,12 +278,15 @@ details[open] > summary::before { transform: rotate(90deg); }
 <div id="error-msg"></div>
 <div id="app" style="display:none">
   <div class="header" id="header"></div>
-  <h2>Packages / Files / Functions</h2>
+  <div id="summary-cards"></div>
+  <h2 id="section-packages">Packages / Files / Functions</h2>
   <div id="packages"></div>
-  <h2>Dead Code Candidates <span id="dead-count" style="color:var(--text-dim);font-weight:400"></span></h2>
+  <h2 id="section-dead" class="section-divider">Dead Code Candidates <span id="dead-count" style="color:var(--text-dim);font-weight:400"></span></h2>
   <div id="dead-code"></div>
-  <h2>Partial Coverage <span id="partial-count" style="color:var(--text-dim);font-weight:400"></span></h2>
+  <h2 id="section-partial" class="section-divider">Partial Coverage <span id="partial-count" style="color:var(--text-dim);font-weight:400"></span></h2>
   <div id="partial"></div>
+  <h2 id="section-full" class="section-divider">Full Coverage <span id="full-count" style="color:var(--text-dim);font-weight:400"></span></h2>
+  <div id="full-coverage"></div>
 </div>
 
 <script>
@@ -268,10 +325,54 @@ details[open] > summary::before { transform: rotate(90deg); }
     return d.innerHTML;
   }
 
+  /* Compute the longest common directory prefix across all file paths */
+  function computeCommonPrefix(pkgs) {
+    var paths = [];
+    (pkgs || []).forEach(function(p) {
+      (p.files || []).forEach(function(f) {
+        paths.push(f.file_name);
+      });
+    });
+    if (paths.length === 0) return '';
+    if (paths.length === 1) {
+      // Return everything up to and including the last '/' before the filename
+      var idx = paths[0].lastIndexOf('/');
+      return idx >= 0 ? paths[0].substring(0, idx + 1) : '';
+    }
+    // Find longest common prefix
+    var prefix = paths[0];
+    for (var i = 1; i < paths.length; i++) {
+      while (paths[i].indexOf(prefix) !== 0) {
+        prefix = prefix.substring(0, prefix.length - 1);
+        if (prefix === '') return '';
+      }
+    }
+    // Trim to last '/' to avoid partial directory names
+    var slashIdx = prefix.lastIndexOf('/');
+    return slashIdx >= 0 ? prefix.substring(0, slashIdx + 1) : '';
+  }
+
+  var commonPrefix = '';
+
+  function stripPrefix(path) {
+    if (commonPrefix && path.indexOf(commonPrefix) === 0) {
+      return path.substring(commonPrefix.length);
+    }
+    return path;
+  }
+
+  /* Extract package directory from a file path (strip filename) */
+  function pkgFromFile(filePath) {
+    var stripped = stripPrefix(filePath);
+    var idx = stripped.lastIndexOf('/');
+    return idx >= 0 ? stripped.substring(0, idx) : stripped;
+  }
+
   function renderHeader(rpt) {
     var t = rpt.total;
     var pct = t.coverage_percent;
     var at = rpt.generated_at ? new Date(rpt.generated_at).toLocaleString() : '—';
+    var prefixNote = commonPrefix ? '<span>Prefix: ' + esc(commonPrefix.replace(/\/$/, '')) + '</span>' : '';
     document.getElementById('header').innerHTML =
       gaugeHTML(pct) +
       '<div style="flex:1">' +
@@ -280,7 +381,48 @@ details[open] > summary::before { transform: rotate(90deg); }
       '<span>Statements: ' + t.covered_statements + ' / ' + t.total_statements + '</span>' +
       '<span>Mode: ' + esc(rpt.mode || '—') + '</span>' +
       '<span>Generated: ' + esc(at) + '</span>' +
+      prefixNote +
       '</div></div>';
+  }
+
+  function renderSummaryCards(pkgs) {
+    var funcs = collectFuncs(pkgs);
+    var totalFuncs = funcs.length;
+    var deadFuncs = funcs.filter(function(x) { return x.fn.coverage_percent === 0; });
+    var partialFuncs = funcs.filter(function(x) { return x.fn.coverage_percent > 0 && x.fn.coverage_percent < 100; });
+    var fullFuncs = funcs.filter(function(x) { return x.fn.coverage_percent >= 100; });
+
+    var deadStmts = 0;
+    deadFuncs.forEach(function(x) { deadStmts += x.fn.total_statements; });
+
+    var partialBlocks = 0;
+    partialFuncs.forEach(function(x) {
+      if (x.fn.unreached_blocks) partialBlocks += x.fn.unreached_blocks.length;
+    });
+
+    var el = document.getElementById('summary-cards');
+    el.innerHTML =
+      '<div class="summary-cards">' +
+      '<a href="#section-packages" class="summary-card">' +
+        '<div class="card-count" style="color:var(--blue)">' + totalFuncs + '</div>' +
+        '<div class="card-label">Total Functions</div>' +
+      '</a>' +
+      '<a href="#section-dead" class="summary-card">' +
+        '<div class="card-count" style="color:var(--red)">' + deadFuncs.length + '</div>' +
+        '<div class="card-label">Dead Code</div>' +
+        '<div class="card-detail">' + deadStmts + ' stmts</div>' +
+      '</a>' +
+      '<a href="#section-partial" class="summary-card">' +
+        '<div class="card-count" style="color:var(--yellow)">' + partialFuncs.length + '</div>' +
+        '<div class="card-label">Partial Coverage</div>' +
+        '<div class="card-detail">' + partialBlocks + ' blocks</div>' +
+      '</a>' +
+      '<a href="#section-full" class="summary-card">' +
+        '<div class="card-count" style="color:var(--green)">' + fullFuncs.length + '</div>' +
+        '<div class="card-label">Full Coverage</div>' +
+        '<div class="card-detail">100% covered</div>' +
+      '</a>' +
+      '</div>';
   }
 
   function mergeAdjacentBlocks(blocks) {
@@ -313,14 +455,17 @@ details[open] > summary::before { transform: rotate(90deg); }
     sorted.forEach(function(item) {
       var p = item.data;
       var pt = p.total;
-      html += '<details><summary><span class="pkg-name">' + esc(p.import_path) + '</span>' +
+      html += '<details><summary><span class="pkg-name">' + esc(stripPrefix(p.import_path)) + '</span>' +
         barHTML(pt.coverage_percent) + '</summary>';
 
       var files = sortByPctAsc(p.files.map(function(f) { return {data: f, coverage_percent: f.total.coverage_percent}; }));
       files.forEach(function(fi) {
         var f = fi.data;
         var ft = f.total;
-        html += '<details style="margin-left:2rem"><summary><span class="file-name">' + esc(f.file_name) + '</span>' +
+        var baseName = f.file_name;
+        var si = baseName.lastIndexOf('/');
+        if (si >= 0) baseName = baseName.substring(si + 1);
+        html += '<details style="margin-left:2rem"><summary><span class="file-name">' + esc(baseName) + '</span>' +
           barHTML(ft.coverage_percent) + '</summary>';
 
         var funcs = sortByPctAsc(f.functions.map(function(fn) { return {data: fn, coverage_percent: fn.coverage_percent}; }));
@@ -365,9 +510,30 @@ details[open] > summary::before { transform: rotate(90deg); }
     return all;
   }
 
+  /* Group functions by package directory, sorted by total statements descending */
+  function groupByPackage(funcs) {
+    var groups = {};
+    funcs.forEach(function(x) {
+      var pkg = pkgFromFile(x.file);
+      if (!groups[pkg]) groups[pkg] = { funcs: [], totalStmts: 0 };
+      groups[pkg].funcs.push(x);
+      groups[pkg].totalStmts += x.fn.total_statements;
+    });
+    // Sort groups by total statements descending
+    var keys = Object.keys(groups);
+    keys.sort(function(a, b) { return groups[b].totalStmts - groups[a].totalStmts; });
+    return keys.map(function(k) { return { pkg: k, funcs: groups[k].funcs, totalStmts: groups[k].totalStmts }; });
+  }
+
+  /* Short location: just filename:line within a package group */
+  function shortLocation(filePath) {
+    var stripped = stripPrefix(filePath);
+    var idx = stripped.lastIndexOf('/');
+    return idx >= 0 ? stripped.substring(idx + 1) : stripped;
+  }
+
   function renderDeadCode(pkgs) {
     var funcs = collectFuncs(pkgs).filter(function(x) { return x.fn.coverage_percent === 0; });
-    funcs.sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
 
     document.getElementById('dead-count').textContent = '(' + funcs.length + ')';
     var el = document.getElementById('dead-code');
@@ -377,13 +543,25 @@ details[open] > summary::before { transform: rotate(90deg); }
       return;
     }
 
+    var groups = groupByPackage(funcs);
+
     var html = '<table class="dead-table"><thead><tr>' +
       '<th>Location</th><th>Function</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
-    funcs.forEach(function(x) {
-      html += '<tr><td>' + esc(x.file) + ':' + x.fn.line + '</td>' +
-        '<td>' + esc(x.fn.name) + '()</td>' +
-        '<td>' + x.fn.total_statements + '</td>' +
-        '<td><span class="tag-dead">0%</span></td></tr>';
+
+    groups.forEach(function(g) {
+      // Sort within group by statements descending
+      g.funcs.sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
+
+      html += '<tr class="group-header"><td colspan="4">' +
+        esc(g.pkg || '(root)') + '  (' + g.funcs.length + ' func' + (g.funcs.length !== 1 ? 's' : '') +
+        ', ' + g.totalStmts + ' stmts)</td></tr>';
+
+      g.funcs.forEach(function(x) {
+        html += '<tr><td>' + esc(shortLocation(x.file)) + ':' + x.fn.line + '</td>' +
+          '<td>' + esc(x.fn.name) + '()</td>' +
+          '<td>' + x.fn.total_statements + '</td>' +
+          '<td><span class="tag-dead">0%</span></td></tr>';
+      });
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -399,7 +577,6 @@ details[open] > summary::before { transform: rotate(90deg); }
         });
       }
     });
-    rows.sort(function(a, b) { return b.block.num_statements - a.block.num_statements; });
 
     document.getElementById('partial-count').textContent = '(' + rows.length + ' blocks)';
     var el = document.getElementById('partial');
@@ -409,14 +586,70 @@ details[open] > summary::before { transform: rotate(90deg); }
       return;
     }
 
+    // Group partial blocks by package
+    var groupMap = {};
+    rows.forEach(function(x) {
+      var pkg = pkgFromFile(x.file);
+      if (!groupMap[pkg]) groupMap[pkg] = { rows: [], totalStmts: 0 };
+      groupMap[pkg].rows.push(x);
+      groupMap[pkg].totalStmts += x.block.num_statements;
+    });
+    var keys = Object.keys(groupMap);
+    keys.sort(function(a, b) { return groupMap[b].totalStmts - groupMap[a].totalStmts; });
+
     var html = '<table class="partial-table"><thead><tr>' +
       '<th>Location</th><th>Function</th><th>Lines</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
-    rows.forEach(function(x) {
-      html += '<tr><td>' + esc(x.file) + ':' + x.block.start_line + '</td>' +
-        '<td>' + esc(x.fn.name) + '()</td>' +
-        '<td>L' + x.block.start_line + '–L' + x.block.end_line + '</td>' +
-        '<td>' + x.block.num_statements + '</td>' +
-        '<td><span class="tag-partial">' + fmt(x.fn.coverage_percent) + '%</span></td></tr>';
+
+    keys.forEach(function(pkg) {
+      var g = groupMap[pkg];
+      // Sort within group by statements descending
+      g.rows.sort(function(a, b) { return b.block.num_statements - a.block.num_statements; });
+
+      html += '<tr class="group-header"><td colspan="5">' +
+        esc(pkg || '(root)') + '  (' + g.rows.length + ' block' + (g.rows.length !== 1 ? 's' : '') +
+        ', ' + g.totalStmts + ' stmts)</td></tr>';
+
+      g.rows.forEach(function(x) {
+        html += '<tr><td>' + esc(shortLocation(x.file)) + ':' + x.block.start_line + '</td>' +
+          '<td>' + esc(x.fn.name) + '()</td>' +
+          '<td>L' + x.block.start_line + '–L' + x.block.end_line + '</td>' +
+          '<td>' + x.block.num_statements + '</td>' +
+          '<td><span class="tag-partial">' + fmt(x.fn.coverage_percent) + '%</span></td></tr>';
+      });
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function renderFullCoverage(pkgs) {
+    var funcs = collectFuncs(pkgs).filter(function(x) { return x.fn.coverage_percent >= 100; });
+
+    document.getElementById('full-count').textContent = '(' + funcs.length + ')';
+    var el = document.getElementById('full-coverage');
+
+    if (funcs.length === 0) {
+      el.innerHTML = '<p style="color:var(--text-dim)">No fully covered functions found.</p>';
+      return;
+    }
+
+    var groups = groupByPackage(funcs);
+
+    var html = '<table class="full-table"><thead><tr>' +
+      '<th>Location</th><th>Function</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
+
+    groups.forEach(function(g) {
+      g.funcs.sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
+
+      html += '<tr class="group-header"><td colspan="4">' +
+        esc(g.pkg || '(root)') + '  (' + g.funcs.length + ' func' + (g.funcs.length !== 1 ? 's' : '') +
+        ', ' + g.totalStmts + ' stmts)</td></tr>';
+
+      g.funcs.forEach(function(x) {
+        html += '<tr><td>' + esc(shortLocation(x.file)) + ':' + x.fn.line + '</td>' +
+          '<td>' + esc(x.fn.name) + '()</td>' +
+          '<td>' + x.fn.total_statements + '</td>' +
+          '<td><span class="tag-full">100%</span></td></tr>';
+      });
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -433,12 +666,16 @@ details[open] > summary::before { transform: rotate(90deg); }
       var caps = results[1];
       sourceAvailable = caps.source_preview === true;
 
+      commonPrefix = computeCommonPrefix(rpt.packages);
+
       document.getElementById('loading').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       renderHeader(rpt);
+      renderSummaryCards(rpt.packages);
       renderPackages(rpt.packages);
       renderDeadCode(rpt.packages);
       renderPartial(rpt.packages);
+      renderFullCoverage(rpt.packages);
     })
     .catch(function(err) {
       document.getElementById('loading').style.display = 'none';
