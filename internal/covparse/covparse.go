@@ -17,17 +17,17 @@ func ParseDir(dir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("covparse: create temp file: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	cmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+dir, "-o="+tmpFile.Name())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("covparse: go tool covdata textfmt: %w\n%s", err, out)
 	}
 
 	data, err := os.ReadFile(tmpFile.Name())
-	os.Remove(tmpFile.Name())
+	_ = os.Remove(tmpFile.Name())
 	if err != nil {
 		return "", fmt.Errorf("covparse: read profile: %w", err)
 	}

@@ -75,8 +75,8 @@ func TestAnalyzeFile(t *testing.T) {
 		FileName: "example.com/pkg/foo.go",
 		Mode:     "set",
 		Blocks: []cover.ProfileBlock{
-			{StartLine: 5, StartCol: 20, EndLine: 7, EndCol: 2, NumStmt: 1, Count: 1},   // inside Add, covered
-			{StartLine: 9, StartCol: 25, EndLine: 11, EndCol: 2, NumStmt: 1, Count: 0},  // inside Sub, not covered
+			{StartLine: 5, StartCol: 20, EndLine: 7, EndCol: 2, NumStmt: 1, Count: 1},    // inside Add, covered
+			{StartLine: 9, StartCol: 25, EndLine: 11, EndCol: 2, NumStmt: 1, Count: 0},   // inside Sub, not covered
 			{StartLine: 13, StartCol: 27, EndLine: 14, EndCol: 18, NumStmt: 1, Count: 1}, // inside Greet, covered
 			{StartLine: 14, StartCol: 18, EndLine: 16, EndCol: 3, NumStmt: 1, Count: 0},  // inside Greet, not covered
 			{StartLine: 17, StartCol: 2, EndLine: 17, EndCol: 40, NumStmt: 1, Count: 1},  // inside Greet, covered
@@ -280,7 +280,7 @@ func TestAnalyzeFile_AllEmpty(t *testing.T) {
 	prof := &cover.Profile{
 		FileName: "example.com/pkg/foo.go",
 		Mode:     "set",
-		Blocks:   []cover.ProfileBlock{
+		Blocks: []cover.ProfileBlock{
 			// Block that doesn't overlap any function
 			{StartLine: 100, StartCol: 1, EndLine: 110, EndCol: 2, NumStmt: 1, Count: 1},
 		},
@@ -380,14 +380,14 @@ func TestRunWithPkgPrefixFilter(t *testing.T) {
 		{
 			FileName: "nonexistent.example.com/included/foo.go",
 			Mode:     "set",
-			Blocks:   []cover.ProfileBlock{
+			Blocks: []cover.ProfileBlock{
 				{StartLine: 1, StartCol: 1, EndLine: 5, EndCol: 2, NumStmt: 1, Count: 1},
 			},
 		},
 		{
 			FileName: "nonexistent.example.com/excluded/bar.go",
 			Mode:     "set",
-			Blocks:   []cover.ProfileBlock{
+			Blocks: []cover.ProfileBlock{
 				{StartLine: 1, StartCol: 1, EndLine: 5, EndCol: 2, NumStmt: 1, Count: 1},
 			},
 		},

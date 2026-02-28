@@ -62,10 +62,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 			continue
 		}
 
-		pkgReport, err := analyzePackage(importPath, diskDir, profs, opts)
-		if err != nil {
-			continue // skip packages we can't analyze
-		}
+		pkgReport := analyzePackage(importPath, diskDir, profs, opts)
 		if pkgReport == nil {
 			continue
 		}
@@ -92,7 +89,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	}, nil
 }
 
-func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts Options) (*report.PackageReport, error) {
+func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts Options) *report.PackageReport {
 	var fileReports []report.FileReport
 	var pkgStmts, pkgCovered int
 
@@ -122,7 +119,7 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts 
 	}
 
 	if len(fileReports) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	return &report.PackageReport{
@@ -133,7 +130,7 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts 
 			CoveragePercent:   report.ComputePercent(pkgCovered, pkgStmts),
 		},
 		Files: fileReports,
-	}, nil
+	}
 }
 
 func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent, opts Options) *report.FileReport {

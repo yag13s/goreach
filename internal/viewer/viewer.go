@@ -86,7 +86,7 @@ func Serve(reportPath string, opts Options) error {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		srv.Shutdown(shutCtx)
+		_ = srv.Shutdown(shutCtx)
 	}()
 
 	if err := srv.Serve(ln); err != http.ErrServerClosed {
@@ -327,5 +327,5 @@ func openBrowser(url string) {
 	default:
 		return
 	}
-	cmd.Start()
+	_ = cmd.Start()
 }

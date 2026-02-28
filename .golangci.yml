@@ -1,0 +1,41 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - prealloc
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+    gosec:
+      excludes:
+        - G104 # unhandled errors — covered by errcheck with finer control
+        - G112 # Slowloris — local dev server only
+        - G204 # subprocess with variable — CLI tool calling go toolchain
+        - G301 # directory permissions — 0755 is fine for CLI
+        - G304 # file inclusion via variable — CLI tool reads user-specified files
+        - G702 # command injection via taint — CLI tool invoking go toolchain
+        - G703 # path traversal via taint — CLI tool
+        - G705 # XSS via taint — CLI writing to stderr
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+      - linters:
+          - errcheck
+        source: "defer "
+
+formatters:
+  enable:
+    - goimports

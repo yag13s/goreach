@@ -9,10 +9,10 @@ import (
 
 // Report is the top-level JSON output of goreach analyze.
 type Report struct {
-	Version     int            `json:"version"`
-	GeneratedAt time.Time     `json:"generated_at"`
-	Mode        string         `json:"mode"`
-	Total       CoverageStats  `json:"total"`
+	Version     int             `json:"version"`
+	GeneratedAt time.Time       `json:"generated_at"`
+	Mode        string          `json:"mode"`
+	Total       CoverageStats   `json:"total"`
 	Packages    []PackageReport `json:"packages"`
 }
 
@@ -25,25 +25,25 @@ type CoverageStats struct {
 
 // PackageReport holds coverage data for a single package.
 type PackageReport struct {
-	ImportPath string       `json:"import_path"`
+	ImportPath string        `json:"import_path"`
 	Total      CoverageStats `json:"total"`
 	Files      []FileReport  `json:"files"`
 }
 
 // FileReport holds coverage data for a single source file.
 type FileReport struct {
-	FileName  string         `json:"file_name"`
-	Total     CoverageStats  `json:"total"`
-	Functions []FuncReport   `json:"functions"`
+	FileName  string        `json:"file_name"`
+	Total     CoverageStats `json:"total"`
+	Functions []FuncReport  `json:"functions"`
 }
 
 // FuncReport holds coverage data for a single function.
 type FuncReport struct {
-	Name              string          `json:"name"`
-	Line              int             `json:"line"`
-	TotalStatements   int             `json:"total_statements"`
-	CoveredStatements int             `json:"covered_statements"`
-	CoveragePercent   float64         `json:"coverage_percent"`
+	Name              string           `json:"name"`
+	Line              int              `json:"line"`
+	TotalStatements   int              `json:"total_statements"`
+	CoveredStatements int              `json:"covered_statements"`
+	CoveragePercent   float64          `json:"coverage_percent"`
 	UnreachedBlocks   []UnreachedBlock `json:"unreached_blocks,omitempty"`
 }
 

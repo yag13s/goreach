@@ -61,7 +61,7 @@ func runView(args []string) error {
 	port := fs.Int("port", 0, "HTTP port (0 = random available)")
 	noOpen := fs.Bool("no-open", false, "do not auto-open browser")
 	srcDir := fs.String("src", "", "source root directory for code preview")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	// positional fallback: goreach view report.json
 	path := *reportPath
@@ -102,7 +102,7 @@ func runAnalyze(args []string) error {
 	minStmts := fs.Int("min-statements", 0, "show functions with at least N unreached statements")
 	outputFile := fs.String("o", "", "output file (default: stdout)")
 	pretty := fs.Bool("pretty", false, "pretty-print JSON output")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	if *profilePath == "" && *coverDir == "" {
 		return fmt.Errorf("either -profile or -coverdir is required")
@@ -114,11 +114,12 @@ func runAnalyze(args []string) error {
 	// Get profile text
 	var profileText string
 	var err error
-	if *profilePath != "" {
+	switch {
+	case *profilePath != "":
 		profileText, err = covparse.ParseProfileFile(*profilePath)
-	} else if *recursive {
+	case *recursive:
 		profileText, err = covparse.ParseDirRecursive(*coverDir)
-	} else {
+	default:
 		profileText, err = covparse.ParseDir(*coverDir)
 	}
 	if err != nil {
@@ -133,10 +134,12 @@ func runAnalyze(args []string) error {
 	defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.WriteString(profileText); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return fmt.Errorf("write temp file: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
 
 	profiles, err := cover.ParseProfiles(tmpFile.Name())
 	if err != nil {
@@ -178,7 +181,7 @@ func runSummary(args []string) error {
 	coverDir := fs.String("coverdir", "", "GOCOVERDIR path")
 	recursive := fs.Bool("r", false, "recursively search -coverdir for coverage data")
 	profilePath := fs.String("profile", "", "path to text coverage profile file")
-	fs.Parse(args)
+	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	if *profilePath == "" && *coverDir == "" {
 		return fmt.Errorf("either -profile or -coverdir is required")
@@ -186,11 +189,12 @@ func runSummary(args []string) error {
 
 	var profileText string
 	var err error
-	if *profilePath != "" {
+	switch {
+	case *profilePath != "":
 		profileText, err = covparse.ParseProfileFile(*profilePath)
-	} else if *recursive {
+	case *recursive:
 		profileText, err = covparse.ParseDirRecursive(*coverDir)
-	} else {
+	default:
 		profileText, err = covparse.ParseDir(*coverDir)
 	}
 	if err != nil {
@@ -204,10 +208,12 @@ func runSummary(args []string) error {
 	defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.WriteString(profileText); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return fmt.Errorf("write temp file: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
 
 	profiles, err := cover.ParseProfiles(tmpFile.Name())
 	if err != nil {

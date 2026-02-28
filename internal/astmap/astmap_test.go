@@ -19,12 +19,12 @@ func TestFileFuncs(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"Add":                   false,
-		"Subtract":              false,
-		"Greet":                 false,
-		"(*Calculator).Add":     false,
+		"Add":                    false,
+		"Subtract":               false,
+		"Greet":                  false,
+		"(*Calculator).Add":      false,
 		"(*Calculator).Multiply": false,
-		"neverCalled":           false,
+		"neverCalled":            false,
 	}
 
 	for _, fn := range funcs {
@@ -67,8 +67,8 @@ func TestFileFuncs_Generics(t *testing.T) {
 
 	expected := map[string]bool{
 		// Container[T] has one type param -> IndexExpr
-		"(Container[T]).Get":   false,
-		"(*Container[T]).Set":  false,
+		"(Container[T]).Get":  false,
+		"(*Container[T]).Set": false,
 		// Pair[K, V] has multiple type params -> IndexListExpr
 		"(Pair[K, V]).GetKey":  false,
 		"(*Pair[K, V]).SetKey": false,
