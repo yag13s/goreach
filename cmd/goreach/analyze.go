@@ -191,7 +191,7 @@ func reportFromFuncCoverage(funcs []covparse.FuncCoverage, opts analysis.Options
 
 	pkgReports := make([]report.PackageReport, 0, len(pkgs))
 	for importPath, pd := range pkgs {
-		var fileReports []report.FileReport
+		fileReports := make([]report.FileReport, 0, len(pd.files))
 		for _, fd := range pd.files {
 			fileReports = append(fileReports, report.FileReport{
 				FileName:  fd.fileName,
