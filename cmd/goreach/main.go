@@ -132,41 +132,6 @@ func runAnalyze(args []string) error {
 		return fmt.Errorf("-profile and -coverdir are mutually exclusive")
 	}
 
-	// Get profile text
-	var profileText string
-	var err error
-	switch {
-	case *profilePath != "":
-		profileText, err = covparse.ParseProfileFile(*profilePath)
-	case *recursive:
-		profileText, err = covparse.ParseDirRecursive(*coverDir)
-	default:
-		profileText, err = covparse.ParseDir(*coverDir)
-	}
-	if err != nil {
-		return err
-	}
-
-	// Write profile to temp file for x/tools/cover parsing
-	tmpFile, err := os.CreateTemp("", "goreach-analyze-*.txt")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(profileText); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-
-	profiles, err := cover.ParseProfiles(tmpFile.Name())
-	if err != nil {
-		return fmt.Errorf("parse profiles: %w", err)
-	}
-
 	var prefixes []string
 	if *pkgFilter != "" {
 		prefixes = strings.Split(*pkgFilter, ",")
@@ -178,7 +143,42 @@ func runAnalyze(args []string) error {
 		MinStatements: *minStmts,
 	}
 
-	rpt, err := analysis.Run(profiles, opts)
+	var rpt *report.Report
+	var err error
+
+	switch {
+	case *recursive:
+		// Multi-build: analyze each build group separately and merge
+		profileTexts, parseErr := covparse.ParseDirRecursive(*coverDir)
+		if parseErr != nil {
+			return parseErr
+		}
+		if len(profileTexts) == 1 {
+			rpt, err = analyzeProfileText(profileTexts[0], opts)
+		} else {
+			reports := make([]*report.Report, 0, len(profileTexts))
+			for _, text := range profileTexts {
+				r, rErr := analyzeProfileText(text, opts)
+				if rErr != nil {
+					return rErr
+				}
+				reports = append(reports, r)
+			}
+			rpt, err = merge.Merge(reports)
+		}
+	case *profilePath != "":
+		profileText, parseErr := covparse.ParseProfileFile(*profilePath)
+		if parseErr != nil {
+			return parseErr
+		}
+		rpt, err = analyzeProfileText(profileText, opts)
+	default:
+		profileText, parseErr := covparse.ParseDir(*coverDir)
+		if parseErr != nil {
+			return parseErr
+		}
+		rpt, err = analyzeProfileText(profileText, opts)
+	}
 	if err != nil {
 		return err
 	}
@@ -195,6 +195,30 @@ func runAnalyze(args []string) error {
 	}
 
 	return rpt.Write(w, *pretty)
+}
+
+// analyzeProfileText parses a text coverage profile and runs analysis on it.
+func analyzeProfileText(text string, opts analysis.Options) (*report.Report, error) {
+	tmpFile, err := os.CreateTemp("", "goreach-analyze-*.txt")
+	if err != nil {
+		return nil, fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(text); err != nil {
+		_ = tmpFile.Close()
+		return nil, fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("close temp file: %w", err)
+	}
+
+	profiles, err := cover.ParseProfiles(tmpFile.Name())
+	if err != nil {
+		return nil, fmt.Errorf("parse profiles: %w", err)
+	}
+
+	return analysis.Run(profiles, opts)
 }
 
 func runMerge(args []string) error {
@@ -252,7 +276,13 @@ func runSummary(args []string) error {
 	case *profilePath != "":
 		profileText, err = covparse.ParseProfileFile(*profilePath)
 	case *recursive:
-		profileText, err = covparse.ParseDirRecursive(*coverDir)
+		// Use only the last (newest) group's profile for summary,
+		// since block-level stats cannot be meaningfully merged.
+		var texts []string
+		texts, err = covparse.ParseDirRecursive(*coverDir)
+		if err == nil && len(texts) > 0 {
+			profileText = texts[len(texts)-1]
+		}
 	default:
 		profileText, err = covparse.ParseDir(*coverDir)
 	}

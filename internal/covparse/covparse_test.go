@@ -3,6 +3,7 @@ package covparse
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -103,6 +104,103 @@ func TestFindCoverageDirs_Nested(t *testing.T) {
 	}
 	if len(dirs) != 2 {
 		t.Errorf("expected 2 dirs, got %d: %v", len(dirs), dirs)
+	}
+}
+
+func TestGroupByMetaHash(t *testing.T) {
+	root := t.TempDir()
+
+	// Build A: two pods with the same covmeta hash
+	podA1 := filepath.Join(root, "build-a", "pod-1")
+	podA2 := filepath.Join(root, "build-a", "pod-2")
+	// Build B: one pod with a different covmeta hash
+	podB1 := filepath.Join(root, "build-b", "pod-1")
+
+	for _, d := range []string{podA1, podA2, podB1} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Same hash for build A pods
+	for _, d := range []string{podA1, podA2} {
+		if err := os.WriteFile(filepath.Join(d, "covmeta.aaaa1111"), []byte("m"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Different hash for build B
+	if err := os.WriteFile(filepath.Join(podB1, "covmeta.bbbb2222"), []byte("m"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dirs := []string{podA1, podA2, podB1}
+	groups, err := groupByMetaHash(dirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d: %v", len(groups), groups)
+	}
+
+	// Check build A group
+	groupA, ok := groups["aaaa1111"]
+	if !ok {
+		t.Fatal("expected group with key 'aaaa1111'")
+	}
+	sort.Strings(groupA)
+	if len(groupA) != 2 {
+		t.Fatalf("expected 2 dirs in group A, got %d", len(groupA))
+	}
+
+	// Check build B group
+	groupB, ok := groups["bbbb2222"]
+	if !ok {
+		t.Fatal("expected group with key 'bbbb2222'")
+	}
+	if len(groupB) != 1 {
+		t.Fatalf("expected 1 dir in group B, got %d", len(groupB))
+	}
+	if groupB[0] != podB1 {
+		t.Errorf("expected %s, got %s", podB1, groupB[0])
+	}
+}
+
+func TestGroupByMetaHash_MultipleHashes(t *testing.T) {
+	root := t.TempDir()
+
+	// A directory with two covmeta hashes (e.g. multi-package binary)
+	dir1 := filepath.Join(root, "pod-1")
+	dir2 := filepath.Join(root, "pod-2")
+	for _, d := range []string{dir1, dir2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Both dirs have the same two hashes
+		for _, h := range []string{"covmeta.hash1", "covmeta.hash2"} {
+			if err := os.WriteFile(filepath.Join(d, h), []byte("m"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	groups, err := groupByMetaHash([]string{dir1, dir2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both dirs share the same hash set, so one group
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d: %v", len(groups), groups)
+	}
+
+	// The key should be the sorted join of hashes
+	groupDirs, ok := groups["hash1,hash2"]
+	if !ok {
+		t.Fatal("expected group with key 'hash1,hash2'")
+	}
+	if len(groupDirs) != 2 {
+		t.Fatalf("expected 2 dirs, got %d", len(groupDirs))
 	}
 }
 
