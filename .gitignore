@@ -2,3 +2,4 @@
 /tmp/
 *.test
 .DS_Store
+testdata/sample-reports/merged.json

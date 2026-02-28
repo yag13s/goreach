@@ -75,7 +75,15 @@ func handleCalc(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"op": op, "a": a, "b": b, "result": result})
+	json.NewEncoder(w).Encode(formatCalcResult(op, a, b, result))
+}
+
+func formatCalcResult(op string, a, b, result int) map[string]any {
+	m := map[string]any{"op": op, "a": a, "b": b, "result": result}
+	if result < 0 {
+		m["warning"] = "negative result"
+	}
+	return m
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
