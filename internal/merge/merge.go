@@ -61,7 +61,7 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 					key := funcKey{fileName: file.FileName, funcName: fn.Name}
 					existing, ok := lookup[key]
 					if !ok || fn.CoveragePercent > existing.coveragePercent ||
-					(fn.CoveragePercent == existing.coveragePercent && r == base) {
+						(fn.CoveragePercent == existing.coveragePercent && r == base) {
 						lookup[key] = &funcEntry{
 							coveragePercent:   fn.CoveragePercent,
 							coveredStatements: fn.CoveredStatements,
