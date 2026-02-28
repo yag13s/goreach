@@ -48,6 +48,7 @@ graph LR
         COVPARSE["covparse"]
         ASTMAP["astmap"]
         ANALYSIS["analysis"]
+        MERGE["merge"]
         REPORT["report"]
         VIEWER["viewer"]
     end
@@ -59,16 +60,18 @@ graph LR
 
     MAIN --> COVPARSE
     MAIN --> ANALYSIS
+    MAIN --> MERGE
     MAIN --> VIEWER
     ANALYSIS --> ASTMAP
     ANALYSIS --> REPORT
+    MERGE --> REPORT
     FLUSHHTTP -.->|optional| FLUSH
 ```
 
 | パッケージ | 役割 | 外部依存 |
 |-----------|------|---------|
 | `cmd/goreach` | CLI エントリポイント（`analyze` / `merge` / `summary` / `view`） | — |
-| `internal/covparse` | GOCOVERDIR バイナリ → テキスト変換 | — |
+| `internal/covparse` | GOCOVERDIR バイナリ → テキスト変換 / `covdata func` 出力パース | — |
 | `internal/astmap` | Go ソースを AST 解析し関数境界を抽出 | — |
 | `internal/analysis` | カバレッジブロックと関数を突き合わせ | `golang.org/x/tools` |
 | `internal/merge` | 複数レポートの関数名ベースマージ | — |
@@ -179,7 +182,11 @@ goreach view -port 8888 -no-open report.json
 | `-port <n>` | HTTP ポート | `0`（ランダム） |
 | `-no-open` | ブラウザの自動オープンを無効化 | `false` |
 
-`-src` を指定すると、Web UI 上の unreached block をクリックしてソースコードをインライン展開できる。隣接するブロックは自動的にマージされて一続きで表示される。`-src` 未指定時は従来通り行番号のみの表示。
+`-src` を指定すると、Web UI 上の unreached block をクリックしてソースコードをインライン展開できる。隣接するブロックは自動的にマージされて一続きで表示される。`-src` 未指定時は行番号のみの表示（クリック不可）。
+
+**ソースプレビューの表示条件:**
+- ソースが表示されるのは **unreached block を持つ関数のみ**。完全カバー（100%）の関数にはソースコード展開は表示されない
+- `-src` にはプロジェクトの Go モジュールルート（`go.mod` があるディレクトリ）を指定する。レポート内のファイルパス（import path）からモジュールパスを差し引いて実ファイルを解決する
 
 ### `goreach summary`
 

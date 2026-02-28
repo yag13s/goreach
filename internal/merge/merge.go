@@ -4,6 +4,7 @@ package merge
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/yag13s/goreach/internal/report"
@@ -101,6 +102,16 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 						CoveredStatements: best.coveredStatements,
 						CoveragePercent:   best.coveragePercent,
 						UnreachedBlocks:   best.unreachedBlocks,
+					}
+					// Reconcile: if the winner came from covdata func
+					// (TotalStatements==0) but the base has real counts,
+					// reconstruct statement counts from the base.
+					if best.totalStatements == 0 && fn.TotalStatements > 0 {
+						total := fn.TotalStatements
+						covered := int(math.Round(float64(total) * best.coveragePercent / 100))
+						mf.Functions[k].TotalStatements = total
+						mf.Functions[k].CoveredStatements = covered
+						mf.Functions[k].Line = fn.Line // use base (current source) line
 					}
 				} else {
 					mf.Functions[k] = fn
