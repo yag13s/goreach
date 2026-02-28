@@ -375,13 +375,14 @@ func TestMakeSourceHandler_LatestUnreached(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Check that line 4 is unreached but not latest_unreached
-	// Check that line 6 is latest_unreached but not unreached
+	// When latest_unreached_blocks exists, unreached_blocks are from an
+	// older build with stale line numbers, so they must NOT be highlighted.
+	// Only latest_unreached lines should be marked.
 	for _, l := range resp.Lines {
 		switch l.Number {
 		case 4:
-			if !l.Unreached {
-				t.Errorf("line 4: unreached = false, want true")
+			if l.Unreached {
+				t.Errorf("line 4: unreached = true, want false (old-build blocks skipped)")
 			}
 			if l.LatestUnreached {
 				t.Errorf("line 4: latest_unreached = true, want false")

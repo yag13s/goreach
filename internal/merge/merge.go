@@ -22,7 +22,7 @@ type funcEntry struct {
 	coveredStatements int
 	totalStatements   int
 	unreachedBlocks   []report.UnreachedBlock
-	line              int
+	fromBase          bool
 }
 
 // Merge combines multiple reports into one. It uses the newest report (by
@@ -60,13 +60,14 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 				for _, fn := range file.Functions {
 					key := funcKey{fileName: file.FileName, funcName: fn.Name}
 					existing, ok := lookup[key]
-					if !ok || fn.CoveragePercent > existing.coveragePercent {
+					if !ok || fn.CoveragePercent > existing.coveragePercent ||
+					(fn.CoveragePercent == existing.coveragePercent && r == base) {
 						lookup[key] = &funcEntry{
 							coveragePercent:   fn.CoveragePercent,
 							coveredStatements: fn.CoveredStatements,
 							totalStatements:   fn.TotalStatements,
 							unreachedBlocks:   fn.UnreachedBlocks,
-							line:              fn.Line,
+							fromBase:          r == base,
 						}
 					}
 				}
@@ -97,16 +98,17 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 				if best, ok := lookup[key]; ok {
 					mf.Functions[k] = report.FuncReport{
 						Name:              fn.Name,
-						Line:              best.line,
+						Line:              fn.Line, // always use base (current source) line
 						TotalStatements:   best.totalStatements,
 						CoveredStatements: best.coveredStatements,
 						CoveragePercent:   best.coveragePercent,
 						UnreachedBlocks:   best.unreachedBlocks,
 					}
-					// If an older build won (no unreached blocks from covdata func)
-					// but the base (latest build) has AST-derived unreached blocks,
-					// preserve them so the viewer can offer a toggle.
-					if best.unreachedBlocks == nil && len(fn.UnreachedBlocks) > 0 {
+					// When an older build won on coverage, its unreached blocks
+					// have line numbers from the old source. Preserve the base
+					// (latest build) blocks so the viewer can show a toggle
+					// between merged coverage and current-source blocks.
+					if !best.fromBase && len(fn.UnreachedBlocks) > 0 {
 						mf.Functions[k].LatestUnreachedBlocks = fn.UnreachedBlocks
 					}
 					// Reconcile: if the winner came from covdata func
@@ -117,7 +119,6 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 						covered := int(math.Round(float64(total) * best.coveragePercent / 100))
 						mf.Functions[k].TotalStatements = total
 						mf.Functions[k].CoveredStatements = covered
-						mf.Functions[k].Line = fn.Line // use base (current source) line
 					}
 				} else {
 					mf.Functions[k] = fn

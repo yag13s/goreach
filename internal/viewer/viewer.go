@@ -204,6 +204,10 @@ func buildUnreachedMap(data []byte) map[string]map[int]bool {
 						StartLine int `json:"start_line"`
 						EndLine   int `json:"end_line"`
 					} `json:"unreached_blocks"`
+					LatestUnreachedBlocks []struct {
+						StartLine int `json:"start_line"`
+						EndLine   int `json:"end_line"`
+					} `json:"latest_unreached_blocks"`
 				} `json:"functions"`
 			} `json:"files"`
 		} `json:"packages"`
@@ -215,6 +219,11 @@ func buildUnreachedMap(data []byte) map[string]map[int]bool {
 	for _, pkg := range rpt.Packages {
 		for _, f := range pkg.Files {
 			for _, fn := range f.Functions {
+				// Skip unreached_blocks when latest_unreached_blocks exists:
+				// the old-build line numbers don't map to current source.
+				if len(fn.LatestUnreachedBlocks) > 0 {
+					continue
+				}
 				for _, b := range fn.UnreachedBlocks {
 					if result[f.FileName] == nil {
 						result[f.FileName] = make(map[int]bool)
