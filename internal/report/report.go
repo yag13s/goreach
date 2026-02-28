@@ -4,6 +4,7 @@ package report
 import (
 	"encoding/json"
 	"io"
+	"os"
 	"time"
 )
 
@@ -54,6 +55,19 @@ type UnreachedBlock struct {
 	EndLine       int `json:"end_line"`
 	EndCol        int `json:"end_col"`
 	NumStatements int `json:"num_statements"`
+}
+
+// ReadFile reads and deserializes a JSON report from the given file path.
+func ReadFile(path string) (*Report, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var r Report
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 // Write serializes the report as JSON to the given writer.

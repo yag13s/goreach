@@ -3,9 +3,83 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestReadFile(t *testing.T) {
+	r := &Report{
+		Version:     1,
+		GeneratedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Mode:        "set",
+		Total: CoverageStats{
+			TotalStatements:   100,
+			CoveredStatements: 75,
+			CoveragePercent:   75.0,
+		},
+		Packages: []PackageReport{
+			{
+				ImportPath: "example.com/pkg",
+				Total: CoverageStats{
+					TotalStatements:   100,
+					CoveredStatements: 75,
+					CoveragePercent:   75.0,
+				},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.json")
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Version != 1 {
+		t.Errorf("Version = %d, want 1", got.Version)
+	}
+	if got.Mode != "set" {
+		t.Errorf("Mode = %q, want %q", got.Mode, "set")
+	}
+	if got.Total.CoveragePercent != 75.0 {
+		t.Errorf("Total.CoveragePercent = %v, want 75.0", got.Total.CoveragePercent)
+	}
+	if len(got.Packages) != 1 {
+		t.Errorf("len(Packages) = %d, want 1", len(got.Packages))
+	}
+}
+
+func TestReadFileNotFound(t *testing.T) {
+	_, err := ReadFile("/nonexistent/path/report.json")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestReadFileInvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ReadFile(path)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
 
 func TestComputePercent(t *testing.T) {
 	tests := []struct {

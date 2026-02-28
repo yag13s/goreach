@@ -14,6 +14,7 @@ import (
 
 	"github.com/yag13s/goreach/internal/analysis"
 	"github.com/yag13s/goreach/internal/covparse"
+	"github.com/yag13s/goreach/internal/merge"
 	"github.com/yag13s/goreach/internal/report"
 	"github.com/yag13s/goreach/internal/viewer"
 )
@@ -47,6 +48,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "goreach summary: %v\n", err)
 			os.Exit(1)
 		}
+	case "merge":
+		if err := runMerge(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "goreach merge: %v\n", err)
+			os.Exit(1)
+		}
 	case "view":
 		if err := runView(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "goreach view: %v\n", err)
@@ -64,6 +70,7 @@ func usage() {
 
 Commands:
   analyze   Analyze coverage data and output JSON report
+  merge     Merge multiple report.json files (max coverage per function)
   summary   Print coverage summary as text
   view      Open report.json in browser UI
   version   Print version information`)
@@ -188,6 +195,44 @@ func runAnalyze(args []string) error {
 	}
 
 	return rpt.Write(w, *pretty)
+}
+
+func runMerge(args []string) error {
+	fs := flag.NewFlagSet("merge", flag.ExitOnError)
+	outputFile := fs.String("o", "", "output file (default: stdout)")
+	pretty := fs.Bool("pretty", false, "pretty-print JSON output")
+	_ = fs.Parse(args) // ExitOnError: never returns error
+
+	paths := fs.Args()
+	if len(paths) == 0 {
+		return fmt.Errorf("at least one report.json path is required")
+	}
+
+	reports := make([]*report.Report, 0, len(paths))
+	for _, p := range paths {
+		r, err := report.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", p, err)
+		}
+		reports = append(reports, r)
+	}
+
+	merged, err := merge.Merge(reports)
+	if err != nil {
+		return err
+	}
+
+	w := os.Stdout
+	if *outputFile != "" {
+		f, err := os.Create(*outputFile)
+		if err != nil {
+			return fmt.Errorf("create output file: %w", err)
+		}
+		defer f.Close()
+		w = f
+	}
+
+	return merged.Write(w, *pretty)
 }
 
 func runSummary(args []string) error {

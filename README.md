@@ -67,10 +67,11 @@ graph LR
 
 | パッケージ | 役割 | 外部依存 |
 |-----------|------|---------|
-| `cmd/goreach` | CLI エントリポイント（`analyze` / `summary` / `view`） | — |
+| `cmd/goreach` | CLI エントリポイント（`analyze` / `merge` / `summary` / `view`） | — |
 | `internal/covparse` | GOCOVERDIR バイナリ → テキスト変換 | — |
 | `internal/astmap` | Go ソースを AST 解析し関数境界を抽出 | — |
 | `internal/analysis` | カバレッジブロックと関数を突き合わせ | `golang.org/x/tools` |
+| `internal/merge` | 複数レポートの関数名ベースマージ | — |
 | `internal/report` | JSON レポート構造体と出力 | — |
 | `internal/viewer` | Web UI サーバー（`view` コマンド） | — |
 | `flush` | 計測対象アプリに組み込む SDK | — |
@@ -130,6 +131,32 @@ goreach analyze -coverdir /var/coverage -r -o report.json
 | `-min-statements <n>` | 未到達ステートメントが N 以上の関数のみ | `0` |
 | `-o <file>` | 出力ファイル | stdout |
 | `-pretty` | JSON を整形出力 | `false` |
+
+### `goreach merge`
+
+複数の report.json を関数名ベースでマージし、各関数の最大カバレッジを採用した統合レポートを出力する。ビルドバージョンが異なるレポート同士でもマージ可能。
+
+```bash
+# 2つのレポートをマージ
+goreach merge -pretty -o merged.json v1-report.json v2-report.json
+
+# ワイルドカードで全レポートをマージ
+goreach merge -o merged.json reports/*.json
+
+# 1件でもエラーにならない（パススルー）
+goreach merge -pretty single-report.json
+```
+
+| フラグ | 説明 | デフォルト |
+|--------|------|-----------|
+| `-o <file>` | 出力ファイル | stdout |
+| `-pretty` | JSON を整形出力 | `false` |
+
+**動作:**
+- `generated_at` が最新のレポートの構造（パッケージ/ファイル/関数一覧）をベースに使用
+- 各関数について全レポート中の最大 `coverage_percent` を採用
+- 古いレポートにのみ存在する関数（削除されたコード）は出力から除外
+- ファイル→パッケージ→レポートのトータルはボトムアップで再計算
 
 ### `goreach view`
 
