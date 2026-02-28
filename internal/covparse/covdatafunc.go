@@ -82,8 +82,8 @@ func newestCounterTime(dirs []string) (time.Time, error) {
 
 // FuncCoverage holds per-function coverage data extracted from `go tool covdata func`.
 type FuncCoverage struct {
-	FileName        string  // e.g. "github.com/user/pkg/file.go"
-	FuncName        string  // goreach (astmap) normalized: "(*Type).Method"
+	FileName        string // e.g. "github.com/user/pkg/file.go"
+	FuncName        string // goreach (astmap) normalized: "(*Type).Method"
 	CoveragePercent float64
 }
 

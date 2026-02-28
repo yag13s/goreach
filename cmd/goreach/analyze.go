@@ -189,7 +189,7 @@ func reportFromFuncCoverage(funcs []covparse.FuncCoverage, opts analysis.Options
 		})
 	}
 
-	var pkgReports []report.PackageReport
+	pkgReports := make([]report.PackageReport, 0, len(pkgs))
 	for importPath, pd := range pkgs {
 		var fileReports []report.FileReport
 		for _, fd := range pd.files {
