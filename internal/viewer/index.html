@@ -271,6 +271,49 @@ details[open] > summary::before { transform: rotate(90deg); }
   margin-left: 4rem;
   font-size: 0.8rem;
 }
+
+/* Latest toggle */
+.latest-toggle-wrap {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.6rem 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+.latest-toggle-wrap.visible { display: flex; }
+.toggle-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--surface2);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--blue); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+.toggle-label { color: var(--text-dim); }
+.toggle-label.active { color: var(--text); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -278,6 +321,14 @@ details[open] > summary::before { transform: rotate(90deg); }
 <div id="error-msg"></div>
 <div id="app" style="display:none">
   <div class="header" id="header"></div>
+  <div class="latest-toggle-wrap" id="latest-toggle">
+    <span class="toggle-label active" id="toggle-label-merged">Merged (best coverage)</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="toggle-input">
+      <span class="toggle-slider"></span>
+    </label>
+    <span class="toggle-label" id="toggle-label-latest">Latest build</span>
+  </div>
   <div id="summary-cards"></div>
   <h2 id="section-packages">Packages / Files / Functions</h2>
   <div id="packages"></div>
@@ -292,6 +343,9 @@ details[open] > summary::before { transform: rotate(90deg); }
 <script>
 (function() {
   'use strict';
+
+  var showLatestUnreached = false;
+  var hasLatestBlocks = false;
 
   function covColor(pct) {
     if (pct >= 100) return 'var(--green)';
@@ -368,6 +422,14 @@ details[open] > summary::before { transform: rotate(90deg); }
     return idx >= 0 ? stripped.substring(0, idx) : stripped;
   }
 
+  /* Pick which unreached_blocks field to use based on toggle state */
+  function getUnreachedBlocks(fn) {
+    if (showLatestUnreached) {
+      return fn.latest_unreached_blocks || null;
+    }
+    return fn.unreached_blocks;
+  }
+
   function renderHeader(rpt) {
     var t = rpt.total;
     var pct = t.coverage_percent;
@@ -397,7 +459,8 @@ details[open] > summary::before { transform: rotate(90deg); }
 
     var partialBlocks = 0;
     partialFuncs.forEach(function(x) {
-      if (x.fn.unreached_blocks) partialBlocks += x.fn.unreached_blocks.length;
+      var blocks = getUnreachedBlocks(x.fn);
+      if (blocks) partialBlocks += blocks.length;
     });
 
     var el = document.getElementById('summary-cards');
@@ -477,8 +540,9 @@ details[open] > summary::before { transform: rotate(90deg); }
             barHTML(fn.coverage_percent) +
             '<span class="func-stmts">' + fn.covered_statements + '/' + fn.total_statements + ' stmts</span></div>';
 
-          if (fn.unreached_blocks && fn.unreached_blocks.length > 0) {
-            mergeAdjacentBlocks(fn.unreached_blocks).forEach(function(b) {
+          var blocks = getUnreachedBlocks(fn);
+          if (blocks && blocks.length > 0) {
+            mergeAdjacentBlocks(blocks).forEach(function(b) {
               if (sourceAvailable) {
                 html += '<div class="unreached-block clickable" data-file="' + esc(f.file_name) +
                   '" data-start="' + b.start_line + '" data-end="' + b.end_line +
@@ -571,10 +635,13 @@ details[open] > summary::before { transform: rotate(90deg); }
     var rows = [];
     collectFuncs(pkgs).forEach(function(x) {
       var fn = x.fn;
-      if (fn.coverage_percent > 0 && fn.coverage_percent < 100 && fn.unreached_blocks) {
-        fn.unreached_blocks.forEach(function(b) {
-          rows.push({file: x.file, fn: fn, block: b});
-        });
+      if (fn.coverage_percent > 0 && fn.coverage_percent < 100) {
+        var blocks = getUnreachedBlocks(fn);
+        if (blocks) {
+          blocks.forEach(function(b) {
+            rows.push({file: x.file, fn: fn, block: b});
+          });
+        }
       }
     });
 
@@ -668,6 +735,25 @@ details[open] > summary::before { transform: rotate(90deg); }
 
       commonPrefix = computeCommonPrefix(rpt.packages);
 
+      // Detect if any function has latest_unreached_blocks
+      (rpt.packages || []).forEach(function(p) {
+        (p.files || []).forEach(function(f) {
+          (f.functions || []).forEach(function(fn) {
+            if (fn.latest_unreached_blocks && fn.latest_unreached_blocks.length > 0) {
+              hasLatestBlocks = true;
+            }
+          });
+        });
+      });
+
+      // Store packages for re-rendering on toggle
+      window.__goreach_packages = rpt.packages;
+
+      // Show toggle if latest blocks exist
+      if (hasLatestBlocks) {
+        document.getElementById('latest-toggle').classList.add('visible');
+      }
+
       document.getElementById('loading').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       renderHeader(rpt);
@@ -683,6 +769,40 @@ details[open] > summary::before { transform: rotate(90deg); }
       el.style.display = 'block';
       el.textContent = 'Failed to load report: ' + err.message;
     });
+
+  // Toggle event
+  document.getElementById('toggle-input').addEventListener('change', function() {
+    showLatestUnreached = this.checked;
+    var mergedLabel = document.getElementById('toggle-label-merged');
+    var latestLabel = document.getElementById('toggle-label-latest');
+    if (showLatestUnreached) {
+      mergedLabel.classList.remove('active');
+      latestLabel.classList.add('active');
+    } else {
+      mergedLabel.classList.add('active');
+      latestLabel.classList.remove('active');
+    }
+
+    // Close all open source previews and clear cached data
+    var previews = document.querySelectorAll('.source-preview');
+    for (var i = 0; i < previews.length; i++) {
+      previews[i].remove();
+    }
+    var blocks = document.querySelectorAll('.unreached-block[data-loaded]');
+    for (var j = 0; j < blocks.length; j++) {
+      blocks[j].removeAttribute('data-loaded');
+      var icon = blocks[j].querySelector('.expand-icon');
+      if (icon) icon.classList.remove('open');
+    }
+
+    // Re-render with stored packages
+    var pkgs = window.__goreach_packages;
+    if (pkgs) {
+      renderSummaryCards(pkgs);
+      renderPackages(pkgs);
+      renderPartial(pkgs);
+    }
+  });
 
   function toggleSource(blockEl) {
     var existing = blockEl.nextElementSibling;
@@ -722,7 +842,8 @@ details[open] > summary::before { transform: rotate(90deg); }
         loadingEl.remove();
         var html = '';
         data.lines.forEach(function(l) {
-          html += '<div class="source-line' + (l.unreached ? ' unreached' : '') + '">' +
+          var isUnreached = showLatestUnreached ? l.latest_unreached : l.unreached;
+          html += '<div class="source-line' + (isUnreached ? ' unreached' : '') + '">' +
             '<span class="line-num">' + l.number + '</span>' +
             '<span>' + esc(l.text) + '</span></div>';
         });

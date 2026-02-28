@@ -63,8 +63,9 @@ func Serve(reportPath string, opts Options) error {
 			return fmt.Errorf("build file whitelist: %w", err)
 		}
 		unreachedMap := buildUnreachedMap(data)
+		latestUnreachedMap := buildLatestUnreachedMap(data)
 		mux.Handle("GET /api/capabilities", makeCapabilitiesHandler(true))
-		mux.Handle("GET /api/source", makeSourceHandler(modulePath, opts.SrcDir, whitelist, unreachedMap))
+		mux.Handle("GET /api/source", makeSourceHandler(modulePath, opts.SrcDir, whitelist, unreachedMap, latestUnreachedMap))
 	} else {
 		mux.Handle("GET /api/capabilities", makeCapabilitiesHandler(false))
 	}
@@ -228,14 +229,52 @@ func buildUnreachedMap(data []byte) map[string]map[int]bool {
 	return result
 }
 
+// buildLatestUnreachedMap precomputes a map of file_name -> set of unreached line
+// numbers from the latest_unreached_blocks field, used when an older build won.
+func buildLatestUnreachedMap(data []byte) map[string]map[int]bool {
+	var rpt struct {
+		Packages []struct {
+			Files []struct {
+				FileName  string `json:"file_name"`
+				Functions []struct {
+					LatestUnreachedBlocks []struct {
+						StartLine int `json:"start_line"`
+						EndLine   int `json:"end_line"`
+					} `json:"latest_unreached_blocks"`
+				} `json:"functions"`
+			} `json:"files"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(data, &rpt); err != nil {
+		return nil
+	}
+	result := make(map[string]map[int]bool)
+	for _, pkg := range rpt.Packages {
+		for _, f := range pkg.Files {
+			for _, fn := range f.Functions {
+				for _, b := range fn.LatestUnreachedBlocks {
+					if result[f.FileName] == nil {
+						result[f.FileName] = make(map[int]bool)
+					}
+					for l := b.StartLine; l <= b.EndLine; l++ {
+						result[f.FileName][l] = true
+					}
+				}
+			}
+		}
+	}
+	return result
+}
+
 type capabilitiesResponse struct {
 	SourcePreview bool `json:"source_preview"`
 }
 
 type sourceLine struct {
-	Number    int    `json:"number"`
-	Text      string `json:"text"`
-	Unreached bool   `json:"unreached"`
+	Number          int    `json:"number"`
+	Text            string `json:"text"`
+	Unreached       bool   `json:"unreached"`
+	LatestUnreached bool   `json:"latest_unreached,omitempty"`
 }
 
 type sourceResponse struct {
@@ -250,7 +289,7 @@ func makeCapabilitiesHandler(sourceEnabled bool) http.Handler {
 	})
 }
 
-func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unreachedMap map[string]map[int]bool) http.Handler {
+func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unreachedMap, latestUnreachedMap map[string]map[int]bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fileName := r.URL.Query().Get("file")
 		startStr := r.URL.Query().Get("start")
@@ -290,6 +329,7 @@ func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unr
 		}
 
 		unreachedLines := unreachedMap[fileName]
+		latestUnreachedLines := latestUnreachedMap[fileName]
 
 		// Add 3 lines of context before and after
 		contextStart := start - 3
@@ -304,9 +344,10 @@ func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unr
 		var result []sourceLine
 		for i := contextStart; i <= contextEnd; i++ {
 			result = append(result, sourceLine{
-				Number:    i,
-				Text:      lines[i-1],
-				Unreached: unreachedLines[i],
+				Number:          i,
+				Text:            lines[i-1],
+				Unreached:       unreachedLines[i],
+				LatestUnreached: latestUnreachedLines[i],
 			})
 		}
 

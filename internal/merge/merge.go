@@ -103,6 +103,12 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 						CoveragePercent:   best.coveragePercent,
 						UnreachedBlocks:   best.unreachedBlocks,
 					}
+					// If an older build won (no unreached blocks from covdata func)
+					// but the base (latest build) has AST-derived unreached blocks,
+					// preserve them so the viewer can offer a toggle.
+					if best.unreachedBlocks == nil && len(fn.UnreachedBlocks) > 0 {
+						mf.Functions[k].LatestUnreachedBlocks = fn.UnreachedBlocks
+					}
 					// Reconcile: if the winner came from covdata func
 					// (TotalStatements==0) but the base has real counts,
 					// reconstruct statement counts from the base.
@@ -200,6 +206,10 @@ func deepCopy(src *report.Report) *report.Report {
 				if len(fn.UnreachedBlocks) > 0 {
 					df.Functions[k].UnreachedBlocks = make([]report.UnreachedBlock, len(fn.UnreachedBlocks))
 					copy(df.Functions[k].UnreachedBlocks, fn.UnreachedBlocks)
+				}
+				if len(fn.LatestUnreachedBlocks) > 0 {
+					df.Functions[k].LatestUnreachedBlocks = make([]report.UnreachedBlock, len(fn.LatestUnreachedBlocks))
+					copy(df.Functions[k].LatestUnreachedBlocks, fn.LatestUnreachedBlocks)
 				}
 			}
 			dp.Files[j] = df

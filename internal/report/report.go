@@ -40,12 +40,13 @@ type FileReport struct {
 
 // FuncReport holds coverage data for a single function.
 type FuncReport struct {
-	Name              string           `json:"name"`
-	Line              int              `json:"line"`
-	TotalStatements   int              `json:"total_statements"`
-	CoveredStatements int              `json:"covered_statements"`
-	CoveragePercent   float64          `json:"coverage_percent"`
-	UnreachedBlocks   []UnreachedBlock `json:"unreached_blocks,omitempty"`
+	Name                  string           `json:"name"`
+	Line                  int              `json:"line"`
+	TotalStatements       int              `json:"total_statements"`
+	CoveredStatements     int              `json:"covered_statements"`
+	CoveragePercent       float64          `json:"coverage_percent"`
+	UnreachedBlocks       []UnreachedBlock `json:"unreached_blocks,omitempty"`
+	LatestUnreachedBlocks []UnreachedBlock `json:"latest_unreached_blocks,omitempty"`
 }
 
 // UnreachedBlock describes a contiguous block of unreached code.

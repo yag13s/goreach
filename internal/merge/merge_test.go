@@ -321,3 +321,156 @@ func TestMerge_ZeroStatementLowerCoverage(t *testing.T) {
 		t.Errorf("CoveredStatements = %v, want 80", foo.CoveredStatements)
 	}
 }
+
+func TestMerge_LatestUnreachedBlocks(t *testing.T) {
+	// Old build (covdata func): higher coverage, no unreached blocks
+	old := makeReportWithStatements(
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		[]report.FuncReport{
+			{
+				Name:              "Foo",
+				CoveragePercent:   80,
+				TotalStatements:   0,
+				CoveredStatements: 0,
+				UnreachedBlocks:   nil, // covdata func doesn't produce these
+			},
+		},
+	)
+
+	// Newest build (AST analysis): lower coverage, has unreached blocks
+	newer := makeReportWithStatements(
+		time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		[]report.FuncReport{
+			{
+				Name:              "Foo",
+				CoveragePercent:   30,
+				TotalStatements:   100,
+				CoveredStatements: 30,
+				UnreachedBlocks: []report.UnreachedBlock{
+					{StartLine: 10, EndLine: 15, NumStatements: 3},
+					{StartLine: 20, EndLine: 22, NumStatements: 2},
+				},
+			},
+		},
+	)
+
+	merged, err := Merge([]*report.Report{old, newer})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foo := findFunc(merged, "Foo")
+	if foo == nil {
+		t.Fatal("Foo not found")
+	}
+
+	// Old build wins on coverage (80% > 30%)
+	if foo.CoveragePercent != 80 {
+		t.Errorf("CoveragePercent = %v, want 80", foo.CoveragePercent)
+	}
+
+	// UnreachedBlocks should be nil (from winning old build)
+	if foo.UnreachedBlocks != nil {
+		t.Errorf("UnreachedBlocks = %v, want nil", foo.UnreachedBlocks)
+	}
+
+	// LatestUnreachedBlocks should be set from base (newest build)
+	if len(foo.LatestUnreachedBlocks) != 2 {
+		t.Fatalf("LatestUnreachedBlocks len = %d, want 2", len(foo.LatestUnreachedBlocks))
+	}
+	if foo.LatestUnreachedBlocks[0].StartLine != 10 || foo.LatestUnreachedBlocks[0].EndLine != 15 {
+		t.Errorf("LatestUnreachedBlocks[0] = %+v, want StartLine=10, EndLine=15", foo.LatestUnreachedBlocks[0])
+	}
+	if foo.LatestUnreachedBlocks[1].StartLine != 20 || foo.LatestUnreachedBlocks[1].EndLine != 22 {
+		t.Errorf("LatestUnreachedBlocks[1] = %+v, want StartLine=20, EndLine=22", foo.LatestUnreachedBlocks[1])
+	}
+}
+
+func TestMerge_LatestUnreachedBlocks_NewestWins(t *testing.T) {
+	// Old build: lower coverage
+	old := makeReportWithStatements(
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		[]report.FuncReport{
+			{
+				Name:              "Foo",
+				CoveragePercent:   30,
+				TotalStatements:   100,
+				CoveredStatements: 30,
+				UnreachedBlocks:   nil,
+			},
+		},
+	)
+
+	// Newest build wins with higher coverage and has unreached blocks
+	newer := makeReportWithStatements(
+		time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+		[]report.FuncReport{
+			{
+				Name:              "Foo",
+				CoveragePercent:   80,
+				TotalStatements:   100,
+				CoveredStatements: 80,
+				UnreachedBlocks: []report.UnreachedBlock{
+					{StartLine: 10, EndLine: 12, NumStatements: 2},
+				},
+			},
+		},
+	)
+
+	merged, err := Merge([]*report.Report{old, newer})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foo := findFunc(merged, "Foo")
+	if foo == nil {
+		t.Fatal("Foo not found")
+	}
+
+	// Newest build wins (80% > 30%), so UnreachedBlocks are from the winner
+	if len(foo.UnreachedBlocks) != 1 {
+		t.Errorf("UnreachedBlocks len = %d, want 1", len(foo.UnreachedBlocks))
+	}
+
+	// LatestUnreachedBlocks should be nil (newest build won, no need)
+	if foo.LatestUnreachedBlocks != nil {
+		t.Errorf("LatestUnreachedBlocks = %v, want nil", foo.LatestUnreachedBlocks)
+	}
+}
+
+func TestMerge_SingleReport_NoLatestBlocks(t *testing.T) {
+	r := makeReportWithStatements(
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		[]report.FuncReport{
+			{
+				Name:              "Foo",
+				CoveragePercent:   50,
+				TotalStatements:   100,
+				CoveredStatements: 50,
+				UnreachedBlocks: []report.UnreachedBlock{
+					{StartLine: 10, EndLine: 15, NumStatements: 3},
+				},
+			},
+		},
+	)
+
+	merged, err := Merge([]*report.Report{r})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foo := findFunc(merged, "Foo")
+	if foo == nil {
+		t.Fatal("Foo not found")
+	}
+
+	// Single report: should not have LatestUnreachedBlocks
+	if foo.LatestUnreachedBlocks != nil {
+		t.Errorf("LatestUnreachedBlocks = %v, want nil", foo.LatestUnreachedBlocks)
+	}
+
+	// UnreachedBlocks should be preserved via deepCopy
+	if len(foo.UnreachedBlocks) != 1 {
+		t.Errorf("UnreachedBlocks len = %d, want 1", len(foo.UnreachedBlocks))
+	}
+}
