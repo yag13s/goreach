@@ -419,6 +419,54 @@ spec:
 
 </details>
 
+## Overhead
+
+Real-world benchmark on a production AWS Lambda (ARM64, 256 MB, ap-northeast-1) serving a Go API with DynamoDB reads/writes. 50 requests × 14 endpoints (6 read, 8 write lifecycle).
+
+Three configurations compared:
+
+| Configuration | p50 (avg across endpoints) | Δ from baseline |
+|---|---|---|
+| **Baseline** — normal build | 58.4 ms | — |
+| **Instrumentation only** — `-cover -covermode=atomic`, no flush | 62.7 ms | **+4.3 ms (+7%)** |
+| **Full** — instrumentation + `flush.Emit()` to S3 per request | 123.0 ms | +64.6 ms (+111%) |
+
+The `-cover` instrumentation itself adds ~4 ms per request and ~30 KB to the binary (+0.1%) — negligible for most services.
+
+The remaining ~60 ms in the "full" configuration is the S3 PutObject in `flush.Emit()`. This cost is **not inherent to goreach** — it depends entirely on your flush strategy:
+
+- **Lambda** (`flush.Emit()` per request): ~60 ms/req overhead from S3 write
+- **Long-running server** (`Interval: 5 * time.Minute`): amortized to near-zero per request
+- **HTTP/signal trigger**: zero overhead on normal requests
+
+<details>
+<summary>Per-endpoint breakdown</summary>
+
+14 REST endpoints (CRUD operations backed by DynamoDB) measured individually:
+
+```
+Endpoint          Op       | Baseline |  Instr.  |   Full   | Instr. Δ
+──────────────────────────────────────────────────────────────────────
+GET    /items     read     |  49.1 ms |  49.8 ms | 105.1 ms |  +0.7 ms
+GET    /items/:id read     |  51.6 ms |  54.3 ms | 113.4 ms |  +2.8 ms
+GET    /nested/a  read     |  55.0 ms |  58.3 ms | 117.8 ms |  +3.3 ms
+GET    /nested/b  read     |  65.6 ms |  69.9 ms | 127.5 ms |  +4.3 ms
+GET    /nested/c  read     |  55.2 ms |  61.8 ms | 115.8 ms |  +6.6 ms
+GET    /global    read     |  56.3 ms |  62.8 ms | 117.3 ms |  +6.5 ms
+POST   /items     create   |  54.0 ms |  60.3 ms | 120.0 ms |  +6.2 ms
+PUT    /items/:id update   |  56.7 ms |  64.1 ms | 120.1 ms |  +7.5 ms
+DELETE /items/:id delete   |  53.4 ms |  57.5 ms | 119.6 ms |  +4.1 ms
+POST   /comments  create   |  61.0 ms |  64.7 ms | 130.8 ms |  +3.6 ms
+DELETE /comments  delete   |  60.4 ms |  67.8 ms | 133.3 ms |  +7.4 ms
+POST   /routes    create   |  69.3 ms |  69.3 ms | 140.9 ms |  +0.0 ms
+PUT    /routes    update   |  69.8 ms |  71.3 ms | 131.2 ms |  +1.5 ms
+DELETE /routes    delete   |  59.9 ms |  65.4 ms | 129.5 ms |  +5.5 ms
+```
+
+All values are p50 (median) over 50 iterations. Measured with `curl` from the same region.
+
+</details>
+
 ## Requirements
 
 - Go 1.26+
