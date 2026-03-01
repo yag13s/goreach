@@ -29,6 +29,10 @@ type Config struct {
 
 	// Clear resets coverage counters after each flush (atomic mode only).
 	Clear bool
+
+	// OnError is called when a background flush (periodic or signal-triggered)
+	// fails. If nil, background flush errors are silently discarded.
+	OnError func(error)
 }
 
 var (
@@ -156,7 +160,9 @@ func HandleSignal(sigs ...os.Signal) {
 		for {
 			select {
 			case <-ch:
-				_ = s.doFlush()
+				if err := s.doFlush(); err != nil && s.cfg.OnError != nil {
+					s.cfg.OnError(err)
+				}
 			case <-s.stopCh:
 				return
 			case <-sigStop:
@@ -174,7 +180,9 @@ func (s *flushState) periodicFlush() {
 	for {
 		select {
 		case <-ticker.C:
-			_ = s.doFlush()
+			if err := s.doFlush(); err != nil && s.cfg.OnError != nil {
+				s.cfg.OnError(err)
+			}
 		case <-s.stopCh:
 			return
 		}

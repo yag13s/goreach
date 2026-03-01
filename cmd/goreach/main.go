@@ -24,6 +24,9 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "-h", "-help", "--help", "help":
+		usage()
+		return
 	case "version":
 		fmt.Printf("goreach %s\n", version)
 	case "analyze":

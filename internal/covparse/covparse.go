@@ -35,43 +35,6 @@ func ParseDir(dir string) (string, error) {
 	return string(data), nil
 }
 
-// ParseDirRecursive walks dir recursively to find directories containing
-// coverage data files (covmeta.* / covcounters.*), groups them by build
-// (covmeta hash), merges each group separately, and returns one text
-// coverage profile per build group. This prevents cross-build contamination
-// when source code changes between builds.
-func ParseDirRecursive(dir string) ([]string, error) {
-	covDirs, err := findCoverageDirs(dir)
-	if err != nil {
-		return nil, err
-	}
-	if len(covDirs) == 0 {
-		return nil, fmt.Errorf("covparse: no coverage data found under %s", dir)
-	}
-
-	groups, err := groupByMetaHash(covDirs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Sort group keys for deterministic output
-	keys := make([]string, 0, len(groups))
-	for k := range groups {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var profiles []string
-	for _, k := range keys {
-		text, err := mergeAndParse(groups[k])
-		if err != nil {
-			return nil, err
-		}
-		profiles = append(profiles, text)
-	}
-	return profiles, nil
-}
-
 // mergeAndParse merges a set of coverage directories and returns the text profile.
 // If only one directory is provided, it parses directly without merging.
 func mergeAndParse(dirs []string) (string, error) {
@@ -154,5 +117,6 @@ func findCoverageDirs(root string) ([]string, error) {
 	for d := range seen {
 		dirs = append(dirs, d)
 	}
+	sort.Strings(dirs)
 	return dirs, nil
 }

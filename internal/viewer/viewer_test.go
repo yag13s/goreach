@@ -114,12 +114,12 @@ func TestReadModulePath(t *testing.T) {
 	})
 }
 
-func TestBuildFileWhitelist(t *testing.T) {
+func TestBuildSourceMaps(t *testing.T) {
 	data := []byte(`{
 		"packages": [
 			{
 				"files": [
-					{"file_name": "github.com/ex/proj/main.go"},
+					{"file_name": "github.com/ex/proj/main.go", "functions": [{"unreached_blocks": [{"start_line": 1, "end_line": 3}]}]},
 					{"file_name": "github.com/ex/proj/util.go"}
 				]
 			},
@@ -130,18 +130,21 @@ func TestBuildFileWhitelist(t *testing.T) {
 			}
 		]
 	}`)
-	wl, err := buildFileWhitelist(data)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	wl, unreached, latest := buildSourceMaps(data)
 	if len(wl) != 3 {
-		t.Fatalf("len = %d, want 3", len(wl))
+		t.Fatalf("whitelist len = %d, want 3", len(wl))
 	}
 	if !wl["github.com/ex/proj/main.go"] {
 		t.Fatal("main.go not in whitelist")
 	}
 	if !wl["github.com/ex/proj/pkg/handler.go"] {
 		t.Fatal("handler.go not in whitelist")
+	}
+	if !unreached["github.com/ex/proj/main.go"][1] {
+		t.Fatal("line 1 should be unreached")
+	}
+	if len(latest) != 0 {
+		t.Fatalf("latest map should be empty, got %d entries", len(latest))
 	}
 }
 
@@ -197,8 +200,8 @@ func TestMakeSourceHandler_Success(t *testing.T) {
 		}]
 	}`)
 
-	whitelist := map[string]bool{"github.com/ex/proj/internal/foo.go": true}
-	handler := makeSourceHandler("github.com/ex/proj", srcDir, whitelist, buildUnreachedMap(reportData), buildLatestUnreachedMap(reportData))
+	whitelist, unreachedMap, latestUnreachedMap := buildSourceMaps(reportData)
+	handler := makeSourceHandler("github.com/ex/proj", srcDir, whitelist, unreachedMap, latestUnreachedMap)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/source?file=github.com/ex/proj/internal/foo.go&start=4&end=5", nil)
 	rec := httptest.NewRecorder()
@@ -230,7 +233,7 @@ func TestMakeSourceHandler_Success(t *testing.T) {
 
 func TestMakeSourceHandler_NotInWhitelist(t *testing.T) {
 	whitelist := map[string]bool{"github.com/ex/proj/allowed.go": true}
-	handler := makeSourceHandler("github.com/ex/proj", t.TempDir(), whitelist, buildUnreachedMap([]byte(`{"packages":[]}`)), nil)
+	handler := makeSourceHandler("github.com/ex/proj", t.TempDir(), whitelist, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/source?file=github.com/ex/proj/secret.go&start=1&end=5", nil)
 	rec := httptest.NewRecorder()
@@ -244,7 +247,7 @@ func TestMakeSourceHandler_NotInWhitelist(t *testing.T) {
 func TestMakeSourceHandler_PathTraversal(t *testing.T) {
 	srcDir := t.TempDir()
 	whitelist := map[string]bool{"github.com/ex/proj/../../etc/passwd": true}
-	handler := makeSourceHandler("github.com/ex/proj", srcDir, whitelist, buildUnreachedMap([]byte(`{"packages":[]}`)), nil)
+	handler := makeSourceHandler("github.com/ex/proj", srcDir, whitelist, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/source?file=github.com/ex/proj/../../etc/passwd&start=1&end=5", nil)
 	rec := httptest.NewRecorder()
@@ -256,7 +259,7 @@ func TestMakeSourceHandler_PathTraversal(t *testing.T) {
 }
 
 func TestMakeSourceHandler_MissingParams(t *testing.T) {
-	handler := makeSourceHandler("github.com/ex/proj", t.TempDir(), map[string]bool{}, buildUnreachedMap([]byte(`{"packages":[]}`)), nil)
+	handler := makeSourceHandler("github.com/ex/proj", t.TempDir(), map[string]bool{}, nil, nil)
 
 	tests := []struct {
 		name string
@@ -278,7 +281,7 @@ func TestMakeSourceHandler_MissingParams(t *testing.T) {
 	}
 }
 
-func TestBuildLatestUnreachedMap(t *testing.T) {
+func TestBuildSourceMaps_LatestUnreached(t *testing.T) {
 	data := []byte(`{
 		"packages": [{
 			"files": [{
@@ -293,33 +296,30 @@ func TestBuildLatestUnreachedMap(t *testing.T) {
 		}]
 	}`)
 
-	m := buildLatestUnreachedMap(data)
-	if m == nil {
-		t.Fatal("expected non-nil map")
+	_, _, latest := buildSourceMaps(data)
+	if latest == nil {
+		t.Fatal("expected non-nil latest map")
 	}
 
-	fileLines := m["github.com/ex/proj/foo.go"]
+	fileLines := latest["github.com/ex/proj/foo.go"]
 	if fileLines == nil {
 		t.Fatal("expected entry for foo.go")
 	}
 
-	// Lines 10, 11, 12 should be marked
 	for _, line := range []int{10, 11, 12} {
 		if !fileLines[line] {
 			t.Errorf("line %d should be marked as latest unreached", line)
 		}
 	}
-	// Line 20 should be marked
 	if !fileLines[20] {
 		t.Error("line 20 should be marked as latest unreached")
 	}
-	// Line 13 should not be marked
 	if fileLines[13] {
 		t.Error("line 13 should not be marked")
 	}
 }
 
-func TestBuildLatestUnreachedMap_Empty(t *testing.T) {
+func TestBuildSourceMaps_NoLatest(t *testing.T) {
 	data := []byte(`{
 		"packages": [{
 			"files": [{
@@ -331,10 +331,9 @@ func TestBuildLatestUnreachedMap_Empty(t *testing.T) {
 		}]
 	}`)
 
-	m := buildLatestUnreachedMap(data)
-	// No latest_unreached_blocks in input, so the map should be empty
-	if len(m) != 0 {
-		t.Errorf("expected empty map, got %d entries", len(m))
+	_, _, latest := buildSourceMaps(data)
+	if len(latest) != 0 {
+		t.Errorf("expected empty latest map, got %d entries", len(latest))
 	}
 }
 
@@ -355,12 +354,8 @@ func TestMakeSourceHandler_LatestUnreached(t *testing.T) {
 		}]
 	}`)
 
-	whitelist := map[string]bool{"github.com/ex/proj/internal/foo.go": true}
-	handler := makeSourceHandler(
-		"github.com/ex/proj", srcDir, whitelist,
-		buildUnreachedMap(reportData),
-		buildLatestUnreachedMap(reportData),
-	)
+	wl, um, lum := buildSourceMaps(reportData)
+	handler := makeSourceHandler("github.com/ex/proj", srcDir, wl, um, lum)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/source?file=github.com/ex/proj/internal/foo.go&start=4&end=7", nil)
 	rec := httptest.NewRecorder()

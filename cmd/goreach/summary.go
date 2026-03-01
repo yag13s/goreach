@@ -3,11 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-
-	"golang.org/x/tools/cover"
 
 	"github.com/yag13s/goreach/internal/covparse"
 	"github.com/yag13s/goreach/internal/report"
@@ -43,23 +41,9 @@ func runSummary(args []string) error {
 		return err
 	}
 
-	tmpFile, err := os.CreateTemp("", "goreach-summary-*.txt")
+	profiles, err := parseProfileText(profileText)
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(profileText); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-
-	profiles, err := cover.ParseProfiles(tmpFile.Name())
-	if err != nil {
-		return fmt.Errorf("parse profiles: %w", err)
+		return err
 	}
 
 	// Compute summary per package
@@ -92,7 +76,7 @@ func runSummary(args []string) error {
 	for p := range stats {
 		pkgs = append(pkgs, p)
 	}
-	sortStrings(pkgs)
+	sort.Strings(pkgs)
 
 	for _, pkg := range pkgs {
 		s := stats[pkg]
@@ -102,12 +86,4 @@ func runSummary(args []string) error {
 
 	fmt.Printf("\n  %-60s %5.1f%% (%d/%d)\n", "TOTAL", report.ComputePercent(overallCovered, overallTotal), overallCovered, overallTotal)
 	return nil
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }

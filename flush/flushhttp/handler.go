@@ -19,7 +19,7 @@ import (
 //
 // Endpoints:
 //
-//	GET  /internal/coverage       — returns current coverage data as text profile
+//	GET  /internal/coverage       — returns current coverage counters as binary data
 //	POST /internal/coverage/flush — flushes to Storage, then returns status
 //	POST /internal/coverage/clear — resets coverage counters (atomic mode only)
 func Handler() http.Handler {
@@ -27,7 +27,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("GET /internal/coverage", handleGet)
 	mux.HandleFunc("POST /internal/coverage/flush", handleFlush)
 	mux.HandleFunc("POST /internal/coverage/clear", handleClear)
-	return http.StripPrefix("", mux)
+	return mux
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request) {

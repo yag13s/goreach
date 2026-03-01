@@ -4,6 +4,7 @@ package analysis
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -104,6 +105,7 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts 
 
 		funcs, err := astmap.FileFuncs(srcPath)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "goreach: warning: %v\n", err)
 			continue
 		}
 
@@ -269,7 +271,7 @@ func resolvePackages(pkgFiles map[string][]*cover.Profile) (map[string]string, e
 			Dir        string `json:"Dir"`
 		}
 		if err := dec.Decode(&pkg); err != nil {
-			break
+			return nil, fmt.Errorf("analysis: decode go list output: %w", err)
 		}
 		result[pkg.ImportPath] = pkg.Dir
 	}

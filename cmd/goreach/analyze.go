@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
-
-	"golang.org/x/tools/cover"
 
 	"github.com/yag13s/goreach/internal/analysis"
 	"github.com/yag13s/goreach/internal/covparse"
@@ -33,6 +32,12 @@ func runAnalyze(args []string) error {
 	}
 	if *profilePath != "" && *coverDir != "" {
 		return fmt.Errorf("-profile and -coverdir are mutually exclusive")
+	}
+	if *threshold < 0 || *threshold > 100 {
+		return fmt.Errorf("-threshold must be between 0 and 100")
+	}
+	if *minStmts < 0 {
+		return fmt.Errorf("-min-statements must be non-negative")
 	}
 
 	var prefixes []string
@@ -122,25 +127,10 @@ func runAnalyze(args []string) error {
 
 // analyzeProfileText parses a text coverage profile and runs analysis on it.
 func analyzeProfileText(text string, opts analysis.Options) (*report.Report, error) {
-	tmpFile, err := os.CreateTemp("", "goreach-analyze-*.txt")
+	profiles, err := parseProfileText(text)
 	if err != nil {
-		return nil, fmt.Errorf("create temp file: %w", err)
+		return nil, err
 	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(text); err != nil {
-		_ = tmpFile.Close()
-		return nil, fmt.Errorf("write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("close temp file: %w", err)
-	}
-
-	profiles, err := cover.ParseProfiles(tmpFile.Name())
-	if err != nil {
-		return nil, fmt.Errorf("parse profiles: %w", err)
-	}
-
 	return analysis.Run(profiles, opts)
 }
 
@@ -189,10 +179,24 @@ func reportFromFuncCoverage(funcs []covparse.FuncCoverage, opts analysis.Options
 		})
 	}
 
+	pkgKeys := make([]string, 0, len(pkgs))
+	for k := range pkgs {
+		pkgKeys = append(pkgKeys, k)
+	}
+	sort.Strings(pkgKeys)
+
 	pkgReports := make([]report.PackageReport, 0, len(pkgs))
-	for importPath, pd := range pkgs {
+	for _, importPath := range pkgKeys {
+		pd := pkgs[importPath]
+		fileKeys := make([]string, 0, len(pd.files))
+		for k := range pd.files {
+			fileKeys = append(fileKeys, k)
+		}
+		sort.Strings(fileKeys)
+
 		fileReports := make([]report.FileReport, 0, len(pd.files))
-		for _, fd := range pd.files {
+		for _, fk := range fileKeys {
+			fd := pd.files[fk]
 			fileReports = append(fileReports, report.FileReport{
 				FileName:  fd.fileName,
 				Functions: fd.functions,

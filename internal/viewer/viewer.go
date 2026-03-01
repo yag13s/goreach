@@ -58,19 +58,19 @@ func Serve(reportPath string, opts Options) error {
 		if err != nil {
 			return fmt.Errorf("read module path: %w", err)
 		}
-		whitelist, err := buildFileWhitelist(data)
-		if err != nil {
-			return fmt.Errorf("build file whitelist: %w", err)
-		}
-		unreachedMap := buildUnreachedMap(data)
-		latestUnreachedMap := buildLatestUnreachedMap(data)
+		whitelist, unreachedMap, latestUnreachedMap := buildSourceMaps(data)
 		mux.Handle("GET /api/capabilities", makeCapabilitiesHandler(true))
 		mux.Handle("GET /api/source", makeSourceHandler(modulePath, opts.SrcDir, whitelist, unreachedMap, latestUnreachedMap))
 	} else {
 		mux.Handle("GET /api/capabilities", makeCapabilitiesHandler(false))
 	}
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -129,27 +129,64 @@ func readModulePath(srcDir string) (string, error) {
 	return "", fmt.Errorf("module directive not found in go.mod")
 }
 
-// buildFileWhitelist extracts all file_name values from the report JSON.
-func buildFileWhitelist(data []byte) (map[string]bool, error) {
+// buildSourceMaps parses the report JSON once and extracts the file whitelist,
+// unreached line map, and latest unreached line map for source preview.
+func buildSourceMaps(data []byte) (whitelist map[string]bool, unreachedMap, latestUnreachedMap map[string]map[int]bool) {
 	var rpt struct {
 		Packages []struct {
 			Files []struct {
-				FileName string `json:"file_name"`
+				FileName  string `json:"file_name"`
+				Functions []struct {
+					UnreachedBlocks []struct {
+						StartLine int `json:"start_line"`
+						EndLine   int `json:"end_line"`
+					} `json:"unreached_blocks"`
+					LatestUnreachedBlocks []struct {
+						StartLine int `json:"start_line"`
+						EndLine   int `json:"end_line"`
+					} `json:"latest_unreached_blocks"`
+				} `json:"functions"`
 			} `json:"files"`
 		} `json:"packages"`
 	}
 	if err := json.Unmarshal(data, &rpt); err != nil {
-		return nil, fmt.Errorf("parse report for whitelist: %w", err)
+		return nil, nil, nil
 	}
-	wl := make(map[string]bool)
+
+	whitelist = make(map[string]bool)
+	unreachedMap = make(map[string]map[int]bool)
+	latestUnreachedMap = make(map[string]map[int]bool)
+
 	for _, pkg := range rpt.Packages {
 		for _, f := range pkg.Files {
 			if f.FileName != "" {
-				wl[f.FileName] = true
+				whitelist[f.FileName] = true
+			}
+			for _, fn := range f.Functions {
+				// Unreached blocks (skip when latest exists — old-build line numbers don't map to current source)
+				if len(fn.LatestUnreachedBlocks) == 0 {
+					for _, b := range fn.UnreachedBlocks {
+						if unreachedMap[f.FileName] == nil {
+							unreachedMap[f.FileName] = make(map[int]bool)
+						}
+						for l := b.StartLine; l <= b.EndLine; l++ {
+							unreachedMap[f.FileName][l] = true
+						}
+					}
+				}
+				// Latest unreached blocks
+				for _, b := range fn.LatestUnreachedBlocks {
+					if latestUnreachedMap[f.FileName] == nil {
+						latestUnreachedMap[f.FileName] = make(map[int]bool)
+					}
+					for l := b.StartLine; l <= b.EndLine; l++ {
+						latestUnreachedMap[f.FileName][l] = true
+					}
+				}
 			}
 		}
 	}
-	return wl, nil
+	return whitelist, unreachedMap, latestUnreachedMap
 }
 
 // resolveSourcePath converts a report file_name (import path form) to an
@@ -190,89 +227,6 @@ func readLines(path string) ([]string, error) {
 		lines = lines[:len(lines)-1]
 	}
 	return lines, nil
-}
-
-// buildUnreachedMap precomputes a map of file_name -> set of unreached line numbers
-// from the report JSON. This avoids re-parsing JSON on every /api/source request.
-func buildUnreachedMap(data []byte) map[string]map[int]bool {
-	var rpt struct {
-		Packages []struct {
-			Files []struct {
-				FileName  string `json:"file_name"`
-				Functions []struct {
-					UnreachedBlocks []struct {
-						StartLine int `json:"start_line"`
-						EndLine   int `json:"end_line"`
-					} `json:"unreached_blocks"`
-					LatestUnreachedBlocks []struct {
-						StartLine int `json:"start_line"`
-						EndLine   int `json:"end_line"`
-					} `json:"latest_unreached_blocks"`
-				} `json:"functions"`
-			} `json:"files"`
-		} `json:"packages"`
-	}
-	if err := json.Unmarshal(data, &rpt); err != nil {
-		return nil
-	}
-	result := make(map[string]map[int]bool)
-	for _, pkg := range rpt.Packages {
-		for _, f := range pkg.Files {
-			for _, fn := range f.Functions {
-				// Skip unreached_blocks when latest_unreached_blocks exists:
-				// the old-build line numbers don't map to current source.
-				if len(fn.LatestUnreachedBlocks) > 0 {
-					continue
-				}
-				for _, b := range fn.UnreachedBlocks {
-					if result[f.FileName] == nil {
-						result[f.FileName] = make(map[int]bool)
-					}
-					for l := b.StartLine; l <= b.EndLine; l++ {
-						result[f.FileName][l] = true
-					}
-				}
-			}
-		}
-	}
-	return result
-}
-
-// buildLatestUnreachedMap precomputes a map of file_name -> set of unreached line
-// numbers from the latest_unreached_blocks field, used when an older build won.
-func buildLatestUnreachedMap(data []byte) map[string]map[int]bool {
-	var rpt struct {
-		Packages []struct {
-			Files []struct {
-				FileName  string `json:"file_name"`
-				Functions []struct {
-					LatestUnreachedBlocks []struct {
-						StartLine int `json:"start_line"`
-						EndLine   int `json:"end_line"`
-					} `json:"latest_unreached_blocks"`
-				} `json:"functions"`
-			} `json:"files"`
-		} `json:"packages"`
-	}
-	if err := json.Unmarshal(data, &rpt); err != nil {
-		return nil
-	}
-	result := make(map[string]map[int]bool)
-	for _, pkg := range rpt.Packages {
-		for _, f := range pkg.Files {
-			for _, fn := range f.Functions {
-				for _, b := range fn.LatestUnreachedBlocks {
-					if result[f.FileName] == nil {
-						result[f.FileName] = make(map[int]bool)
-					}
-					for l := b.StartLine; l <= b.EndLine; l++ {
-						result[f.FileName][l] = true
-					}
-				}
-			}
-		}
-	}
-	return result
 }
 
 type capabilitiesResponse struct {

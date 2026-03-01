@@ -266,5 +266,19 @@ func TestCopyFile_Success(t *testing.T) {
 	}
 }
 
+// TestWriterStorage_NilWriter tests that WriterStorage.Store returns an error
+// when W is nil instead of panicking.
+func TestWriterStorage_NilWriter(t *testing.T) {
+	storage := WriterStorage{}
+	files := []string{"/some/file.txt"}
+	err := storage.Store(context.Background(), files, Metadata{})
+	if err == nil {
+		t.Fatal("expected error for nil writer")
+	}
+	if !strings.Contains(err.Error(), "nil") {
+		t.Errorf("error should mention nil, got: %v", err)
+	}
+}
+
 // Ensure io is used (WriterStorage implements Storage using io.Writer).
 var _ io.Writer = &errWriter{}

@@ -50,6 +50,9 @@ type WriterStorage struct {
 }
 
 func (s WriterStorage) Store(_ context.Context, files []string, meta Metadata) error {
+	if s.W == nil {
+		return fmt.Errorf("goreach/flush: WriterStorage.W is nil")
+	}
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -70,7 +73,7 @@ func (s WriterStorage) Store(_ context.Context, files []string, meta Metadata) e
 	return nil
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -81,10 +84,12 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+	}()
 
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
