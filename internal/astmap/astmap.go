@@ -28,7 +28,7 @@ func FileFuncs(filename string) ([]*FuncExtent, error) {
 	var funcs []*FuncExtent
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok {
+		if !ok || fn.Body == nil {
 			continue
 		}
 

@@ -38,10 +38,14 @@ var (
 )
 
 type flushState struct {
-	cfg    Config
-	stopCh chan struct{}
-	doneCh chan struct{}
-	sigCh  chan os.Signal
+	cfg     Config
+	stopCh  chan struct{}
+	doneCh  chan struct{}
+	flushMu sync.Mutex // serializes doFlush to prevent concurrent write+clear races
+
+	sigMu     sync.Mutex
+	sigCh     chan os.Signal
+	sigStopCh chan struct{} // stop channel for current signal goroutine
 }
 
 // Enable activates coverage flushing with the given configuration.
@@ -82,13 +86,14 @@ func Enable(cfg Config) {
 }
 
 // Stop performs a final flush and stops periodic flushing.
+// It returns the error from the final flush, if any.
 // It should be called via defer after Enable.
-func Stop() {
+func Stop() error {
 	mu.Lock()
 	s := state
 	if !enabled || s == nil {
 		mu.Unlock()
-		return
+		return nil
 	}
 	enabled = false
 	state = nil
@@ -97,12 +102,14 @@ func Stop() {
 	close(s.stopCh)
 	<-s.doneCh
 
+	s.sigMu.Lock()
 	if s.sigCh != nil {
 		signal.Stop(s.sigCh)
 	}
+	s.sigMu.Unlock()
 
 	// Final flush
-	_ = doFlush(s.cfg)
+	return s.doFlush()
 }
 
 // Emit performs an immediate coverage data flush.
@@ -113,14 +120,14 @@ func Emit() error {
 		mu.Unlock()
 		return nil
 	}
-	cfg := s.cfg
 	mu.Unlock()
 
-	return doFlush(cfg)
+	return s.doFlush()
 }
 
 // HandleSignal registers signal-based flush triggers.
 // When any of the specified signals is received, a flush is performed.
+// Calling HandleSignal again replaces the previous signal handler.
 func HandleSignal(sigs ...os.Signal) {
 	mu.Lock()
 	s := state
@@ -130,16 +137,29 @@ func HandleSignal(sigs ...os.Signal) {
 	}
 	mu.Unlock()
 
+	s.sigMu.Lock()
+	defer s.sigMu.Unlock()
+
+	// Clean up previous signal handler if any.
+	if s.sigCh != nil {
+		signal.Stop(s.sigCh)
+		close(s.sigStopCh)
+	}
+
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, sigs...)
 	s.sigCh = ch
+	sigStop := make(chan struct{})
+	s.sigStopCh = sigStop
 
 	go func() {
 		for {
 			select {
 			case <-ch:
-				_ = doFlush(s.cfg)
+				_ = s.doFlush()
 			case <-s.stopCh:
+				return
+			case <-sigStop:
 				return
 			}
 		}
@@ -154,14 +174,18 @@ func (s *flushState) periodicFlush() {
 	for {
 		select {
 		case <-ticker.C:
-			_ = doFlush(s.cfg)
+			_ = s.doFlush()
 		case <-s.stopCh:
 			return
 		}
 	}
 }
 
-func doFlush(cfg Config) error {
+func (s *flushState) doFlush() error {
+	// Serialize flushes to prevent concurrent write+clear races.
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
+
 	tmpDir, err := os.MkdirTemp("", "goreach-flush-*")
 	if err != nil {
 		return fmt.Errorf("goreach/flush: create temp dir: %w", err)
@@ -203,16 +227,18 @@ func doFlush(cfg Config) error {
 		Timestamp:    time.Now(),
 		Hostname:     hostname,
 		PodName:      podName,
-		BuildVersion: cfg.BuildVersion,
-		ServiceName:  cfg.ServiceName,
+		BuildVersion: s.cfg.BuildVersion,
+		ServiceName:  s.cfg.ServiceName,
 	}
 
-	if err := cfg.Storage.Store(context.Background(), files, meta); err != nil {
+	if err := s.cfg.Storage.Store(context.Background(), files, meta); err != nil {
 		return fmt.Errorf("goreach/flush: store: %w", err)
 	}
 
-	if cfg.Clear {
-		_ = coverage.ClearCounters()
+	if s.cfg.Clear {
+		if err := coverage.ClearCounters(); err != nil {
+			return fmt.Errorf("goreach/flush: clear counters: %w", err)
+		}
 	}
 
 	return nil

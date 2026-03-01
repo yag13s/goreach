@@ -96,6 +96,35 @@ func TestFileFuncs_Generics(t *testing.T) {
 	}
 }
 
+// TestFileFuncs_Interface tests that bodyless functions (interface method
+// declarations) are skipped without panicking.
+func TestFileFuncs_Interface(t *testing.T) {
+	funcs, err := FileFuncs(filepath.Join(testdataDir(), "interface.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Only concrete methods should be returned, not interface method declarations.
+	expected := map[string]bool{
+		"(*ConcreteRunner).Run":  false,
+		"(*ConcreteRunner).Stop": false,
+	}
+
+	for _, fn := range funcs {
+		if _, ok := expected[fn.Name]; ok {
+			expected[fn.Name] = true
+		} else {
+			t.Errorf("unexpected function (possible bodyless leak): %s", fn.Name)
+		}
+	}
+
+	for name, found := range expected {
+		if !found {
+			t.Errorf("expected function not found: %s", name)
+		}
+	}
+}
+
 // TestExprString_Default tests the default branch of exprString which
 // handles unknown/unsupported expression types by returning the Go type name.
 func TestExprString_Default(t *testing.T) {
