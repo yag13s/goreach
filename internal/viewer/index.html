@@ -314,6 +314,15 @@ details[open] > summary::before { transform: rotate(90deg); }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
 .toggle-label { color: var(--text-dim); }
 .toggle-label.active { color: var(--text); font-weight: 600; }
+
+/* Syntax highlighting */
+.syn-kw { color: #ff7b72; }
+.syn-str { color: #a5d6a7; }
+.syn-comment { color: #8b949e; font-style: italic; }
+.syn-num { color: #79c0ff; }
+.syn-type { color: #ffa657; }
+.syn-builtin { color: #d2a8ff; }
+.syn-func { color: #d2a8ff; }
 </style>
 </head>
 <body>
@@ -348,9 +357,10 @@ details[open] > summary::before { transform: rotate(90deg); }
   var hasLatestBlocks = false;
 
   function covColor(pct) {
+    if (pct <= 0) return 'var(--red)';
     if (pct >= 100) return 'var(--green)';
-    if (pct > 0)   return 'var(--yellow)';
-    return 'var(--red)';
+    var hue = Math.round((pct / 100) * 120);
+    return 'hsl(' + hue + ', 80%, 55%)';
   }
 
   function fmt(n) { return Number(n).toFixed(1); }
@@ -377,6 +387,101 @@ details[open] > summary::before { transform: rotate(90deg); }
     var d = document.createElement('div');
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  /* Syntax highlighting for Go source */
+  var goKeywords = {};
+  'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var'.split(' ').forEach(function(w) { goKeywords[w] = 1; });
+  var goTypes = {};
+  'bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr any comparable'.split(' ').forEach(function(w) { goTypes[w] = 1; });
+  var goBuiltins = {};
+  'append cap close complex copy delete imag len make new panic print println real recover nil true false iota'.split(' ').forEach(function(w) { goBuiltins[w] = 1; });
+
+  function escHTML(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function highlightGo(text) {
+    var out = '';
+    var i = 0;
+    var n = text.length;
+    while (i < n) {
+      var ch = text[i];
+      // Line comment
+      if (ch === '/' && i + 1 < n && text[i + 1] === '/') {
+        out += '<span class="syn-comment">' + escHTML(text.substring(i)) + '</span>';
+        break;
+      }
+      // Block comment
+      if (ch === '/' && i + 1 < n && text[i + 1] === '*') {
+        var ce = text.indexOf('*/', i + 2);
+        if (ce >= 0) {
+          out += '<span class="syn-comment">' + escHTML(text.substring(i, ce + 2)) + '</span>';
+          i = ce + 2; continue;
+        }
+        out += '<span class="syn-comment">' + escHTML(text.substring(i)) + '</span>';
+        break;
+      }
+      // Double-quoted string
+      if (ch === '"') {
+        var j = i + 1;
+        while (j < n && text[j] !== '"') { if (text[j] === '\\') j++; j++; }
+        out += '<span class="syn-str">' + escHTML(text.substring(i, Math.min(j + 1, n))) + '</span>';
+        i = j + 1; continue;
+      }
+      // Backtick string
+      if (ch === '`') {
+        var bt = text.indexOf('`', i + 1);
+        if (bt >= 0) {
+          out += '<span class="syn-str">' + escHTML(text.substring(i, bt + 1)) + '</span>';
+          i = bt + 1;
+        } else {
+          out += '<span class="syn-str">' + escHTML(text.substring(i)) + '</span>';
+          i = n;
+        }
+        continue;
+      }
+      // Rune literal
+      if (ch === "'") {
+        var rm = text.substring(i).match(/^'(?:\\.|[^'\\])'/);
+        if (rm) {
+          out += '<span class="syn-str">' + escHTML(rm[0]) + '</span>';
+          i += rm[0].length; continue;
+        }
+      }
+      // Number
+      if (ch >= '0' && ch <= '9' && (i === 0 || !/[a-zA-Z_]/.test(text[i - 1]))) {
+        var nm = text.substring(i).match(/^(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*\.?[0-9_]*([eE][+-]?[0-9_]+)?i?)/);
+        if (nm) {
+          out += '<span class="syn-num">' + escHTML(nm[0]) + '</span>';
+          i += nm[0].length; continue;
+        }
+      }
+      // Identifier
+      if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_') {
+        var im = text.substring(i).match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
+        if (im) {
+          var w = im[0];
+          var ai = i + w.length;
+          if (goKeywords[w]) {
+            out += '<span class="syn-kw">' + escHTML(w) + '</span>';
+          } else if (goTypes[w]) {
+            out += '<span class="syn-type">' + escHTML(w) + '</span>';
+          } else if (goBuiltins[w]) {
+            out += '<span class="syn-builtin">' + escHTML(w) + '</span>';
+          } else if (ai < n && text[ai] === '(') {
+            out += '<span class="syn-func">' + escHTML(w) + '</span>';
+          } else {
+            out += escHTML(w);
+          }
+          i = ai; continue;
+        }
+      }
+      // Plain character
+      out += escHTML(ch);
+      i++;
+    }
+    return out;
   }
 
   /* Compute the longest common directory prefix across all file paths */
@@ -845,7 +950,7 @@ details[open] > summary::before { transform: rotate(90deg); }
           var isUnreached = showLatestUnreached ? l.latest_unreached : l.unreached;
           html += '<div class="source-line' + (isUnreached ? ' unreached' : '') + '">' +
             '<span class="line-num">' + l.number + '</span>' +
-            '<span>' + esc(l.text) + '</span></div>';
+            '<span>' + highlightGo(l.text) + '</span></div>';
         });
         blockEl.setAttribute('data-loaded', html);
         var div = document.createElement('div');
