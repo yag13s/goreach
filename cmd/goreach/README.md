@@ -150,7 +150,7 @@ goreach view -src . merged.json
         "covered_statements": 9,
         "coverage_percent": 75.0,
         "unreached_blocks": [
-          {"start_line": 42, "end_line": 45, "num_statements": 2}
+          {"start_line": 42, "start_col": 1, "end_line": 45, "end_col": 1, "num_statements": 2}
         ]
       }]
     }]
