@@ -74,6 +74,7 @@ goreach view -src . report.json
 | `-src <dir>` | Source root for inline code preview | — (disabled) |
 | `-port <n>` | HTTP port | `0` (random) |
 | `-no-open` | Do not auto-open browser | `false` |
+| `-report <file>` | Path to report.json (alternative to positional argument) | — |
 
 ### summary
 
