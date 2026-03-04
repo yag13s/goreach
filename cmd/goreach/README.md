@@ -16,7 +16,7 @@ goreach <command> [flags]
 
 ## Commands
 
-### analyze
+### analyz
 
 Analyze coverage data and output a JSON report of unreached functions and blocks.
 
@@ -142,8 +142,18 @@ goreach view -src . merged.json
   },
   "packages": [{
     "import_path": "myapp/handler",
+    "total": {
+      "total_statements": 12,
+      "covered_statements": 9,
+      "coverage_percent": 75.0
+    },
     "files": [{
       "file_name": "myapp/handler/handler.go",
+      "total": {
+        "total_statements": 12,
+        "covered_statements": 9,
+        "coverage_percent": 75.0
+      },
       "functions": [{
         "name": "HandleRequest",
         "line": 28,
