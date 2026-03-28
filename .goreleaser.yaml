@@ -25,21 +25,16 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
-brews:
+homebrew_casks:
   - name: goreach
     repository:
       owner: yag13s
       name: homebrew-tap
       branch: main
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/yag13s/goreach"
     description: "Find unreached code paths in running Go services."
     license: "MIT"
-    install: |
-      bin.install "goreach"
-    test: |
-      system "#{bin}/goreach", "--help"
 
 changelog:
   sort: asc
