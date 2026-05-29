@@ -16,7 +16,7 @@ goreach <command> [flags]
 
 ## Commands
 
-### analyz
+### analyze
 
 Analyze coverage data and output a JSON report of unreached functions and blocks.
 
