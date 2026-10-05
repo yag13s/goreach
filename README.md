@@ -97,6 +97,29 @@ bash testdata/sampleserver/run.sh
 </details>
 
 <details>
+<summary><strong>summary</strong> usage</summary>
+
+```bash
+# From a report: the same numbers analyze, merge and view work with
+goreach summary report.json
+
+# Straight from coverage data: no source tree needed
+goreach summary -coverdir ./coverage
+goreach summary -profile coverage.txt
+```
+
+| Flag | Description |
+|------|-------------|
+| `-report <file>` | report.json written by `analyze` or `merge` (also accepted as a positional argument) |
+| `-coverdir <dir>` | GOCOVERDIR path |
+| `-r` | Recursively search coverdir; if it holds several builds, only the newest is summarized |
+| `-profile <file>` | Text coverage profile path |
+
+Summarizing coverage data directly counts every statement in the profile and never looks at source code, so it works on a machine that has only the data. It cannot merge coverage across builds, and its totals include packages `analyze` would skip for lack of source. For numbers that match a report, summarize the report.
+
+</details>
+
+<details>
 <summary><strong>merge</strong> flags</summary>
 
 | Flag | Description | Default |
@@ -183,7 +206,7 @@ coverage: download-coverage analyze-coverage merge-coverage
 |----------|---------|----------|
 | CI / scripts | `analyze -o report.json` | Filter with jq, diffable, store in Git |
 | Human review | `view report.json -src .` | Inline source preview, package tree, block detail |
-| Text overview | `summary -coverdir ...` | Terminal-friendly function list with coverage % |
+| Text overview | `summary report.json` | Terminal-friendly per-package coverage % |
 
 JSON report structure (shortened):
 
