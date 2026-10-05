@@ -3,8 +3,11 @@ package analysis
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -232,13 +235,18 @@ func resolvePackages(importPaths []string) (map[string]string, error) {
 	}
 
 	result := make(map[string]string)
-	dec := json.NewDecoder(bytes.NewReader(out))
-	for dec.More() {
+	// go list prints one JSON object per package, back to back.
+	dec := jsontext.NewDecoder(bytes.NewReader(out))
+	for {
 		var pkg struct {
 			ImportPath string `json:"ImportPath"`
 			Dir        string `json:"Dir"`
 		}
-		if err := dec.Decode(&pkg); err != nil {
+		err := json.UnmarshalDecode(dec, &pkg)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
 			return nil, fmt.Errorf("analysis: decode go list output: %w", err)
 		}
 		result[pkg.ImportPath] = pkg.Dir

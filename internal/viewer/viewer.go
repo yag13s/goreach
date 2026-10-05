@@ -5,7 +5,7 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"net"
 	"net/http"
@@ -220,7 +220,7 @@ type sourceLine struct {
 	Number          int    `json:"number"`
 	Text            string `json:"text"`
 	Unreached       bool   `json:"unreached"`
-	LatestUnreached bool   `json:"latest_unreached,omitempty"`
+	LatestUnreached bool   `json:"latest_unreached,omitzero"`
 }
 
 type sourceResponse struct {
@@ -292,7 +292,7 @@ func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unr
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(sourceResponse{Lines: result})
+		_ = json.MarshalWrite(w, sourceResponse{Lines: result})
 	})
 }
 

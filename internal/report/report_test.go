@@ -319,3 +319,38 @@ func TestFilterFunctions_EmptiedFileStaysAsEmptyArray(t *testing.T) {
 		t.Errorf("expected functions to encode as [], got %s", buf.String())
 	}
 }
+
+func TestWrite_NilListsEncodeAsArrays(t *testing.T) {
+	r := &Report{
+		Version: SchemaVersion,
+		Packages: []PackageReport{{
+			ImportPath: "example.com/pkg",
+			Files:      []FileReport{{FileName: "example.com/pkg/foo.go"}},
+		}},
+	}
+	var buf bytes.Buffer
+	if err := r.Write(&buf, false); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"functions":[]`) {
+		t.Errorf("nil function list should encode as [], got %s", out)
+	}
+	if strings.Contains(out, "null") {
+		t.Errorf("output should contain no null, got %s", out)
+	}
+	if !strings.HasSuffix(out, "}\n") {
+		t.Errorf("output should end with a single newline, got %q", out)
+	}
+}
+
+func TestReadFile_RejectsDuplicateKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.json")
+	data := `{"version":1,"packages":[],"packages":[{"import_path":"x"}]}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFile(path); err == nil {
+		t.Fatal("expected an error for a report with a duplicated key")
+	}
+}
