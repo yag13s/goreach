@@ -14,9 +14,14 @@
 //	defer flush.Stop()
 //
 // For serverless environments (e.g., AWS Lambda) where periodic flushing is
-// not possible, call [Emit] manually after each request:
+// not possible, flush manually after each request. [EmitContext] keeps the
+// upload within the request's deadline:
 //
-//	flush.Emit()
+//	flush.EmitContext(ctx)
+//
+// A flush is only as fast as its [Storage]. To keep a stalled upload from
+// blocking later flushes and shutdown, set Config.FlushTimeout, or use
+// [EmitContext] and [StopContext].
 //
 // The [Storage] interface abstracts the destination for coverage files.
 // Built-in implementations include [LocalStorage] for local directories and
