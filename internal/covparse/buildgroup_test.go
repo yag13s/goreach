@@ -3,7 +3,7 @@ package covparse
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -123,7 +123,7 @@ func TestGroupByMetaHash(t *testing.T) {
 	if !ok {
 		t.Fatal("expected group with key 'aaaa1111'")
 	}
-	sort.Strings(groupA)
+	slices.Sort(groupA)
 	if len(groupA) != 2 {
 		t.Fatalf("expected 2 dirs in group A, got %d", len(groupA))
 	}

@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 )
 
 // FuncExtent describes the source position of a function declaration.
@@ -68,14 +69,11 @@ func exprString(expr ast.Expr) string {
 	case *ast.IndexExpr:
 		return exprString(t.X) + "[" + exprString(t.Index) + "]"
 	case *ast.IndexListExpr:
-		s := exprString(t.X) + "["
+		indices := make([]string, len(t.Indices))
 		for i, idx := range t.Indices {
-			if i > 0 {
-				s += ", "
-			}
-			s += exprString(idx)
+			indices[i] = exprString(idx)
 		}
-		return s + "]"
+		return exprString(t.X) + "[" + strings.Join(indices, ", ") + "]"
 	default:
 		return fmt.Sprintf("%T", expr)
 	}

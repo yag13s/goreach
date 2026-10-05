@@ -2,11 +2,12 @@ package viewer
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
 
 	"github.com/yag13s/goreach/internal/report"
@@ -160,40 +161,84 @@ func TestBuildSourceMaps(t *testing.T) {
 	}
 }
 
-func TestResolveSourcePath(t *testing.T) {
-	srcDir := t.TempDir()
-	// Create a file to resolve
-	subDir := filepath.Join(srcDir, "internal", "pkg")
-	os.MkdirAll(subDir, 0755)
-	os.WriteFile(filepath.Join(subDir, "foo.go"), []byte("package pkg\n"), 0644)
-
+func TestSourceRelPath(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		got, err := resolveSourcePath("github.com/ex/proj/internal/pkg/foo.go", "github.com/ex/proj", srcDir)
+		got, err := sourceRelPath("github.com/ex/proj/internal/pkg/foo.go", "github.com/ex/proj")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// EvalSymlinks may resolve the temp dir, so check suffix
-		if !filepath.IsAbs(got) {
-			t.Fatalf("got relative path: %s", got)
-		}
-		if !strings.HasSuffix(got, filepath.Join("internal", "pkg", "foo.go")) {
-			t.Fatalf("got %q, want suffix internal/pkg/foo.go", got)
+		if got != "internal/pkg/foo.go" {
+			t.Fatalf("got %q, want internal/pkg/foo.go", got)
 		}
 	})
 
 	t.Run("not in module", func(t *testing.T) {
-		_, err := resolveSourcePath("github.com/other/pkg/foo.go", "github.com/ex/proj", srcDir)
-		if err == nil {
+		if _, err := sourceRelPath("github.com/other/pkg/foo.go", "github.com/ex/proj"); err == nil {
 			t.Fatal("expected error for file not in module")
 		}
 	})
 
-	t.Run("path traversal", func(t *testing.T) {
-		_, err := resolveSourcePath("github.com/ex/proj/../../etc/passwd", "github.com/ex/proj", srcDir)
-		if err == nil {
-			t.Fatal("expected error for path traversal")
+	t.Run("module path itself", func(t *testing.T) {
+		if _, err := sourceRelPath("github.com/ex/proj", "github.com/ex/proj"); err == nil {
+			t.Fatal("expected error for a name with nothing after the module path")
 		}
 	})
+}
+
+func TestReadSourceLines(t *testing.T) {
+	// outside holds a file the source root must never serve.
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret\n"), 0644)
+
+	srcDir := t.TempDir()
+	os.MkdirAll(filepath.Join(srcDir, "internal", "pkg"), 0755)
+	os.WriteFile(filepath.Join(srcDir, "internal", "pkg", "foo.go"), []byte("package pkg\n\nfunc Foo() {}\n"), 0644)
+	// A link that stays inside the root, and two that leave it.
+	if err := os.Symlink(filepath.Join("internal", "pkg", "foo.go"), filepath.Join(srcDir, "inside.go")); err != nil {
+		t.Skipf("symlinks not available: %v", err)
+	}
+	os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(srcDir, "abs-escape.go"))
+	rel, err := filepath.Rel(srcDir, filepath.Join(outside, "secret.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Symlink(rel, filepath.Join(srcDir, "rel-escape.go"))
+
+	t.Run("regular file", func(t *testing.T) {
+		lines, err := readSourceLines(srcDir, "internal/pkg/foo.go")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{"package pkg", "", "func Foo() {}"}
+		if !slices.Equal(lines, want) {
+			t.Fatalf("got %q, want %q", lines, want)
+		}
+	})
+
+	t.Run("symlink inside the root", func(t *testing.T) {
+		lines, err := readSourceLines(srcDir, "inside.go")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(lines) != 3 {
+			t.Fatalf("got %d lines, want 3", len(lines))
+		}
+	})
+
+	for _, name := range []string{
+		"../" + filepath.Base(outside) + "/secret.txt", // dot-dot out of the root
+		"internal/../../" + filepath.Base(outside) + "/secret.txt",
+		"abs-escape.go", // symlink to an absolute path outside
+		"rel-escape.go", // symlink to a relative path outside
+		"missing.go",
+	} {
+		t.Run("refuses "+name, func(t *testing.T) {
+			lines, err := readSourceLines(srcDir, name)
+			if !errors.Is(err, errNotServable) {
+				t.Fatalf("got lines %q, err %v; want errNotServable", lines, err)
+			}
+		})
+	}
 }
 
 func TestMakeSourceHandler_Success(t *testing.T) {

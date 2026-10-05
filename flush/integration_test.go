@@ -81,7 +81,7 @@ func runApp(t *testing.T, scenario string, env ...string) (dir string, calls []s
 	dir = filepath.Join(t.TempDir(), "out")
 
 	// A scenario that hangs is a failure, not something to wait out.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, app, scenario, dir)
 	// The runtime writes covmeta to GOCOVERDIR at startup; keep it away from dir.
@@ -94,7 +94,7 @@ func runApp(t *testing.T, scenario string, env ...string) (dir string, calls []s
 		t.Fatalf("flushapp %s: %v\nstderr: %s", scenario, err, stderr.String())
 	}
 
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		var c storeCall
 		if json.Unmarshal([]byte(line), &c) == nil && len(c.Files) > 0 {
 			calls = append(calls, c)

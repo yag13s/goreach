@@ -3,12 +3,16 @@ package analysis
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/cover"
@@ -31,11 +35,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	pkgFiles := groupByPackage(profiles)
 
 	// Sort package import paths for deterministic output
-	importPaths := make([]string, 0, len(pkgFiles))
-	for ip := range pkgFiles {
-		importPaths = append(importPaths, ip)
-	}
-	sort.Strings(importPaths)
+	importPaths := slices.Sorted(maps.Keys(pkgFiles))
 
 	// Resolve package import paths to disk paths
 	pkgPaths, err := resolvePackages(importPaths)
@@ -86,8 +86,8 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *repo
 	var pkgStmts, pkgCovered int
 
 	// Sort profiles by filename for deterministic output
-	sort.Slice(profiles, func(i, j int) bool {
-		return profiles[i].FileName < profiles[j].FileName
+	slices.SortFunc(profiles, func(a, b *cover.Profile) int {
+		return strings.Compare(a.FileName, b.FileName)
 	})
 
 	for _, prof := range profiles {
@@ -235,13 +235,18 @@ func resolvePackages(importPaths []string) (map[string]string, error) {
 	}
 
 	result := make(map[string]string)
-	dec := json.NewDecoder(bytes.NewReader(out))
-	for dec.More() {
+	// go list prints one JSON object per package, back to back.
+	dec := jsontext.NewDecoder(bytes.NewReader(out))
+	for {
 		var pkg struct {
 			ImportPath string `json:"ImportPath"`
 			Dir        string `json:"Dir"`
 		}
-		if err := dec.Decode(&pkg); err != nil {
+		err := json.UnmarshalDecode(dec, &pkg)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
 			return nil, fmt.Errorf("analysis: decode go list output: %w", err)
 		}
 		result[pkg.ImportPath] = pkg.Dir

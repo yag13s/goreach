@@ -2,7 +2,8 @@
 package report
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"io"
 	"os"
 	"slices"
@@ -69,39 +70,44 @@ type UnreachedBlock struct {
 
 // ReadFile reads and deserializes a JSON report from the given file path.
 func ReadFile(path string) (*Report, error) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
+
 	var r Report
-	if err := json.Unmarshal(data, &r); err != nil {
+	if err := json.UnmarshalRead(f, &r); err != nil {
 		return nil, err
 	}
 	return &r, nil
 }
 
-// Write serializes the report as JSON to the given writer.
+// Write serializes the report as JSON to the given writer, followed by a
+// newline. Empty lists are written as [], never null, whether or not the
+// slice is nil.
 func (r *Report) Write(w io.Writer, pretty bool) error {
-	enc := json.NewEncoder(w)
+	var opts []json.Options
 	if pretty {
-		enc.SetIndent("", "  ")
+		opts = append(opts, jsontext.WithIndent("  "))
 	}
-	return enc.Encode(r)
+	if err := json.MarshalWrite(w, r, opts...); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "\n")
+	return err
 }
 
 // Clone returns a deep copy of the report.
-//
-// Nil package, file and function lists come back empty rather than nil, so a
-// clone always encodes them as [] and never as null.
 func (r *Report) Clone() *Report {
 	c := *r
-	c.Packages = cloneList(r.Packages)
+	c.Packages = slices.Clone(r.Packages)
 	for i := range c.Packages {
 		pkg := &c.Packages[i]
-		pkg.Files = cloneList(pkg.Files)
+		pkg.Files = slices.Clone(pkg.Files)
 		for j := range pkg.Files {
 			file := &pkg.Files[j]
-			file.Functions = cloneList(file.Functions)
+			file.Functions = slices.Clone(file.Functions)
 			for k := range file.Functions {
 				fn := &file.Functions[k]
 				fn.UnreachedBlocks = slices.Clone(fn.UnreachedBlocks)
@@ -110,11 +116,6 @@ func (r *Report) Clone() *Report {
 		}
 	}
 	return &c
-}
-
-// cloneList copies s into a new, non-nil slice.
-func cloneList[T any](s []T) []T {
-	return append(make([]T, 0, len(s)), s...)
 }
 
 // FuncFilter selects which functions a report lists.
