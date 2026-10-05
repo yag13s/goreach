@@ -5,10 +5,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/cover"
@@ -31,11 +32,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	pkgFiles := groupByPackage(profiles)
 
 	// Sort package import paths for deterministic output
-	importPaths := make([]string, 0, len(pkgFiles))
-	for ip := range pkgFiles {
-		importPaths = append(importPaths, ip)
-	}
-	sort.Strings(importPaths)
+	importPaths := slices.Sorted(maps.Keys(pkgFiles))
 
 	// Resolve package import paths to disk paths
 	pkgPaths, err := resolvePackages(importPaths)
@@ -86,8 +83,8 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *repo
 	var pkgStmts, pkgCovered int
 
 	// Sort profiles by filename for deterministic output
-	sort.Slice(profiles, func(i, j int) bool {
-		return profiles[i].FileName < profiles[j].FileName
+	slices.SortFunc(profiles, func(a, b *cover.Profile) int {
+		return strings.Compare(a.FileName, b.FileName)
 	})
 
 	for _, prof := range profiles {

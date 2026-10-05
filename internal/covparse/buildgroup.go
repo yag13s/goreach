@@ -3,10 +3,11 @@ package covparse
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,8 +52,8 @@ func FindBuildGroups(dir string) ([]BuildGroup, error) {
 		groups = append(groups, BuildGroup{Dirs: dirs, NewestTimestamp: ts})
 	}
 
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].NewestTimestamp.Before(groups[j].NewestTimestamp)
+	slices.SortFunc(groups, func(a, b BuildGroup) int {
+		return a.NewestTimestamp.Compare(b.NewestTimestamp)
 	})
 
 	return groups, nil
@@ -103,12 +104,7 @@ func findCoverageDirs(root string) ([]string, error) {
 		return nil, fmt.Errorf("covparse: walk %s: %w", root, err)
 	}
 
-	dirs := make([]string, 0, len(seen))
-	for d := range seen {
-		dirs = append(dirs, d)
-	}
-	sort.Strings(dirs)
-	return dirs, nil
+	return slices.Sorted(maps.Keys(seen)), nil
 }
 
 // groupByMetaHash groups coverage directories by their covmeta hash set.
@@ -127,7 +123,7 @@ func groupByMetaHash(dirs []string) (map[string][]string, error) {
 				hashes = append(hashes, hash)
 			}
 		}
-		sort.Strings(hashes)
+		slices.Sort(hashes)
 		key := strings.Join(hashes, ",")
 		groups[key] = append(groups[key], dir)
 	}

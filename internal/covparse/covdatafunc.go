@@ -31,29 +31,22 @@ func RunCovdataFunc(dirs []string) ([]FuncCoverage, error) {
 // The last line is a total line: "total (statements) <pct>%" which is skipped.
 func parseCovdataFuncOutput(output string) []FuncCoverage {
 	var result []FuncCoverage
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "total") {
 			continue
 		}
 
 		// Format: "github.com/user/pkg/file.go:42:\t\tFuncName\t\t75.0%"
-		// Split on tab to get fields
-		colonIdx := strings.Index(line, ":")
-		if colonIdx < 0 {
+		fileName, rest, ok := strings.Cut(line, ":")
+		if !ok {
 			continue
 		}
-		fileName := line[:colonIdx]
-
-		// Find the function name and percentage
-		// After "file:line:", the rest is tab-separated: funcname and pct%
-		rest := line[colonIdx+1:]
-		// Skip the line number part (next colon)
-		colonIdx2 := strings.Index(rest, ":")
-		if colonIdx2 < 0 {
+		// Skip the line number; what follows is the function name and pct%.
+		_, rest, ok = strings.Cut(rest, ":")
+		if !ok {
 			continue
 		}
-		rest = rest[colonIdx2+1:]
 
 		fields := strings.Fields(rest)
 		if len(fields) < 2 {
@@ -82,10 +75,10 @@ func parseCovdataFuncOutput(output string) []FuncCoverage {
 //	*Type.Method   → (*Type).Method
 //	Type.Method    → (Type).Method
 func NormalizeCovdataFuncName(name string) string {
-	dotIdx := strings.LastIndex(name, ".")
-	if dotIdx <= 0 {
+	recv, method, ok := strings.CutLast(name, ".")
+	if !ok || recv == "" {
 		// plain function, no receiver
 		return name
 	}
-	return "(" + name[:dotIdx] + ")." + name[dotIdx+1:]
+	return "(" + recv + ")." + method
 }

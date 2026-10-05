@@ -123,8 +123,8 @@ func readModulePath(srcDir string) (string, error) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module")), nil
+		if modulePath, ok := strings.CutPrefix(line, "module "); ok {
+			return strings.TrimSpace(modulePath), nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -278,14 +278,8 @@ func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unr
 		latestUnreachedLines := latestUnreachedMap[fileName]
 
 		// Add 3 lines of context before and after
-		contextStart := start - 3
-		if contextStart < 1 {
-			contextStart = 1
-		}
-		contextEnd := end + 3
-		if contextEnd > len(lines) {
-			contextEnd = len(lines)
-		}
+		contextStart := max(start-3, 1)
+		contextEnd := min(end+3, len(lines))
 
 		var result []sourceLine
 		for i := contextStart; i <= contextEnd; i++ {

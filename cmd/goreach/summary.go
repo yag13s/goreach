@@ -4,9 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/cover"
@@ -79,28 +80,20 @@ type summaryRow struct {
 // summarizeProfiles totals the statements of raw coverage profiles per
 // package. It needs no source code.
 func summarizeProfiles(profiles []*cover.Profile) []summaryRow {
-	byPkg := make(map[string]*summaryRow)
+	byPkg := make(map[string]summaryRow)
 	for _, p := range profiles {
 		pkg := path.Dir(p.FileName)
 		row := byPkg[pkg]
-		if row == nil {
-			row = &summaryRow{pkg: pkg}
-			byPkg[pkg] = row
-		}
+		row.pkg = pkg
 		for _, b := range p.Blocks {
 			row.total += b.NumStmt
 			if b.Count > 0 {
 				row.covered += b.NumStmt
 			}
 		}
+		byPkg[pkg] = row
 	}
-
-	rows := make([]summaryRow, 0, len(byPkg))
-	for _, row := range byPkg {
-		rows = append(rows, *row)
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].pkg < rows[j].pkg })
-	return rows
+	return sortedRows(slices.Collect(maps.Values(byPkg)))
 }
 
 // summarizeReport returns the per-package totals recorded in a report, so the
@@ -114,7 +107,12 @@ func summarizeReport(rpt *report.Report) []summaryRow {
 			total:   pkg.Total.TotalStatements,
 		})
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].pkg < rows[j].pkg })
+	return sortedRows(rows)
+}
+
+// sortedRows sorts rows by package and returns them.
+func sortedRows(rows []summaryRow) []summaryRow {
+	slices.SortFunc(rows, func(a, b summaryRow) int { return strings.Compare(a.pkg, b.pkg) })
 	return rows
 }
 
