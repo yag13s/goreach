@@ -244,10 +244,32 @@ Safe to call on binaries built without `-cover` -- all flush operations become n
 | Trigger | Use Case | How |
 |---------|----------|-----|
 | Periodic | Long-running servers | `Config{Interval: 5 * time.Minute}` |
-| Manual | Lambda, request-scoped | `flush.Emit()` |
+| Manual | Lambda, request-scoped | `flush.Emit()` / `flush.EmitContext(ctx)` |
 | HTTP | CronJob, external trigger | `flushhttp.Handler()` |
 | Signal | Batch jobs, non-HTTP processes | `flush.HandleSignal(syscall.SIGUSR1)` |
-| Shutdown | All processes | `defer flush.Stop()` |
+| Shutdown | All processes | `defer flush.Stop()` / `flush.StopContext(ctx)` |
+
+### Timeouts
+
+A flush takes as long as its storage does. If an upload stalls, later flushes queue up behind it and `flush.Stop()` does not return. Two ways to bound that:
+
+```go
+// Every flush without a context of its own (periodic, signal, Emit, Stop)
+// fails with context.DeadlineExceeded after 10s.
+flush.Enable(flush.Config{
+    // ...
+    FlushTimeout: 10 * time.Second,
+})
+
+// Or bound a single call by a context.
+flush.EmitContext(ctx)
+
+shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+flush.StopContext(shutdownCtx)
+```
+
+The deadline reaches your storage through the `ctx` argument of `Store` (and of `objstore`'s `Upload`), so pass it on to the SDK call that does the upload. There is no timeout by default.
 
 ### Storage Interface
 
@@ -352,7 +374,8 @@ goreach analyze -coverdir /tmp/coverage -r -pretty
 <summary><strong>AWS Lambda</strong></summary>
 
 Lambda environments freeze between invocations, so timer-based flush does not work.
-Call `flush.Emit()` at the end of each request instead.
+Call `flush.EmitContext(ctx)` at the end of each request instead; passing the invocation's
+context keeps the upload within the function's deadline.
 
 ```go
 // init — runs once per cold start
@@ -368,7 +391,7 @@ func init() {
 // handler — flush per invocation
 func handler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
     resp, err := process(ctx, req)
-    flush.Emit()  // must be explicit, timers are frozen
+    flush.EmitContext(ctx)  // must be explicit, timers are frozen
     return resp, err
 }
 ```

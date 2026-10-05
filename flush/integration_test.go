@@ -3,6 +3,7 @@
 package flush_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The tests in this file build testdata/flushapp with -cover and run it, so
@@ -78,7 +80,10 @@ func runApp(t *testing.T, scenario string, env ...string) (dir string, calls []s
 	app := flushApp(t)
 	dir = filepath.Join(t.TempDir(), "out")
 
-	cmd := exec.Command(app, scenario, dir)
+	// A scenario that hangs is a failure, not something to wait out.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, app, scenario, dir)
 	// The runtime writes covmeta to GOCOVERDIR at startup; keep it away from dir.
 	cmd.Env = append(os.Environ(), "GOCOVERDIR="+t.TempDir(), "POD_NAME=")
 	cmd.Env = append(cmd.Env, env...)
@@ -192,5 +197,56 @@ func TestIntegration_OnError(t *testing.T) {
 	_, _, stdout := runApp(t, "on-error")
 	if !strings.Contains(stdout, "goreach/flush: store: storage unavailable") {
 		t.Errorf("OnError got %q, want the wrapped storage error", stdout)
+	}
+}
+
+func TestIntegration_ContextVariantsMatchPlainOnes(t *testing.T) {
+	dir, calls, _ := runApp(t, "emit-context")
+	// EmitContext while enabled plus the final flush in StopContext; the
+	// calls after StopContext are no-ops.
+	if len(calls) != 2 {
+		t.Fatalf("got %d Store calls, want 2: %+v", len(calls), calls)
+	}
+	requireCoverageData(t, dir)
+}
+
+// The scenarios below check their own timing and errors inside flushapp and
+// exit non-zero on failure; the test asserts each step was reached.
+
+func TestIntegration_ContextDeadlineEndsFlush(t *testing.T) {
+	_, _, stdout := runApp(t, "emit-context-deadline")
+	for _, want := range []string{
+		"EmitContext: goreach/flush: store: context deadline exceeded",
+		"EmitContext (cancelled): goreach/flush: flush not started: context canceled",
+		"StopContext: goreach/flush: store: context deadline exceeded",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("output missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestIntegration_FlushTimeout(t *testing.T) {
+	_, _, stdout := runApp(t, "flush-timeout")
+	for _, want := range []string{
+		"periodic flush: goreach/flush: store: context deadline exceeded",
+		"Emit: goreach/flush: ",
+		"Stop: goreach/flush: ",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("output missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestIntegration_HungStorageDoesNotBlockContextCallers(t *testing.T) {
+	_, _, stdout := runApp(t, "hung-storage")
+	for _, want := range []string{
+		"EmitContext: goreach/flush: waiting for flush in progress: context deadline exceeded",
+		"StopContext: goreach/flush: waiting for periodic flush to stop: context deadline exceeded",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("output missing %q:\n%s", want, stdout)
+		}
 	}
 }

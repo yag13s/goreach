@@ -30,6 +30,16 @@ type Config struct {
 	// Clear resets coverage counters after each flush (atomic mode only).
 	Clear bool
 
+	// FlushTimeout bounds each flush that is not given a context of its own:
+	// periodic and signal-triggered flushes, [Emit] and [Stop]. A flush that
+	// exceeds it fails with [context.DeadlineExceeded]. Zero means no limit.
+	//
+	// Without a limit, a Storage that hangs (say, an upload over a dead
+	// connection) stalls every later flush and keeps Stop from returning.
+	// The timeout is delivered to Storage.Store through its context, so it
+	// only takes effect if the Storage honours cancellation.
+	FlushTimeout time.Duration
+
 	// OnError is called when a background flush (periodic or signal-triggered)
 	// fails. If nil, background flush errors are silently discarded.
 	OnError func(error)
@@ -41,10 +51,14 @@ var (
 )
 
 type flushState struct {
-	cfg     Config
-	stopCh  chan struct{}
-	doneCh  chan struct{}
-	flushMu sync.Mutex // serializes doFlush to prevent concurrent write+clear races
+	cfg    Config
+	stopCh chan struct{}
+	doneCh chan struct{}
+
+	// flushSem serializes doFlush to prevent concurrent write+clear races.
+	// It is a channel rather than a mutex so that waiting for it can be
+	// abandoned when the caller's context is done.
+	flushSem chan struct{}
 
 	sigMu     sync.Mutex
 	sigCh     chan os.Signal
@@ -74,9 +88,10 @@ func Enable(cfg Config) {
 	}
 
 	s := &flushState{
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		cfg:      cfg,
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
+		flushSem: make(chan struct{}, 1),
 	}
 	state = s
 
@@ -90,35 +105,62 @@ func Enable(cfg Config) {
 // Stop performs a final flush and stops periodic flushing.
 // It returns the error from the final flush, if any.
 // It should be called via defer after Enable.
+//
+// Stop waits for the final flush for as long as it takes, or for
+// Config.FlushTimeout if set. Use [StopContext] to bound it by a context.
 func Stop() error {
-	mu.Lock()
-	s := state
-	state = nil
-	mu.Unlock()
+	s := detach()
 	if s == nil {
 		return nil
 	}
+	ctx, cancel := s.backgroundContext()
+	defer cancel()
+	return s.stop(ctx)
+}
 
-	close(s.stopCh)
-	<-s.doneCh
-
-	s.sigMu.Lock()
-	if s.sigCh != nil {
-		signal.Stop(s.sigCh)
+// StopContext is like [Stop], but gives up when ctx is done: on waiting for a
+// flush already in progress, and on the final flush itself, whose
+// Storage.Store call receives ctx. Flushing is stopped either way.
+//
+// Use it to keep shutdown within a grace period:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+//	defer cancel()
+//	err := flush.StopContext(ctx)
+func StopContext(ctx context.Context) error {
+	s := detach()
+	if s == nil {
+		return nil
 	}
-	s.sigMu.Unlock()
-
-	// Final flush
-	return s.doFlush()
+	return s.stop(ctx)
 }
 
 // Emit performs an immediate coverage data flush.
+//
+// Emit waits for the flush for as long as it takes, or for
+// Config.FlushTimeout if set. Use [EmitContext] to bound it by a context.
 func Emit() error {
 	s := current()
 	if s == nil {
 		return nil
 	}
-	return s.doFlush()
+	ctx, cancel := s.backgroundContext()
+	defer cancel()
+	return s.doFlush(ctx)
+}
+
+// EmitContext is like [Emit], but gives up when ctx is done. ctx is passed to
+// Storage.Store, so an upload in progress is cancelled if the Storage
+// honours it.
+//
+// In a request-scoped environment such as AWS Lambda, pass the invocation's
+// context so a slow upload cannot outlive the request's deadline.
+func EmitContext(ctx context.Context) error {
+	s := current()
+	if s == nil {
+		return nil
+	}
+	return s.doFlush(ctx)
 }
 
 // HandleSignal registers signal-based flush triggers.
@@ -166,6 +208,49 @@ func current() *flushState {
 	return state
 }
 
+// detach disables flushing and returns the state that was active, or nil.
+func detach() *flushState {
+	mu.Lock()
+	defer mu.Unlock()
+	s := state
+	state = nil
+	return s
+}
+
+// backgroundContext returns the context for a flush whose caller supplied
+// none, bounded by Config.FlushTimeout if set.
+func (s *flushState) backgroundContext() (context.Context, context.CancelFunc) {
+	if s.cfg.FlushTimeout > 0 {
+		return context.WithTimeout(context.Background(), s.cfg.FlushTimeout)
+	}
+	return context.Background(), func() {}
+}
+
+// stop shuts down the background goroutines and performs the final flush.
+func (s *flushState) stop(ctx context.Context) error {
+	close(s.stopCh)
+
+	s.sigMu.Lock()
+	if s.sigCh != nil {
+		signal.Stop(s.sigCh)
+	}
+	s.sigMu.Unlock()
+
+	// The periodic goroutine may be in the middle of a flush.
+	select {
+	case <-s.doneCh:
+	default:
+		select {
+		case <-s.doneCh:
+		case <-ctx.Done():
+			return fmt.Errorf("goreach/flush: waiting for periodic flush to stop: %w", ctx.Err())
+		}
+	}
+
+	// Final flush
+	return s.doFlush(ctx)
+}
+
 func (s *flushState) periodicFlush() {
 	defer close(s.doneCh)
 	ticker := time.NewTicker(s.cfg.Interval)
@@ -184,15 +269,31 @@ func (s *flushState) periodicFlush() {
 // flushInBackground flushes on behalf of a goroutine that has no caller to
 // return an error to, reporting failures through Config.OnError.
 func (s *flushState) flushInBackground() {
-	if err := s.doFlush(); err != nil && s.cfg.OnError != nil {
+	ctx, cancel := s.backgroundContext()
+	defer cancel()
+	if err := s.doFlush(ctx); err != nil && s.cfg.OnError != nil {
 		s.cfg.OnError(err)
 	}
 }
 
-func (s *flushState) doFlush() error {
-	// Serialize flushes to prevent concurrent write+clear races.
-	s.flushMu.Lock()
-	defer s.flushMu.Unlock()
+func (s *flushState) doFlush(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("goreach/flush: flush not started: %w", err)
+	}
+
+	// Serialize flushes to prevent concurrent write+clear races. Take the
+	// semaphore outright when it is free, so that which error a caller gets
+	// does not depend on select's random choice.
+	select {
+	case s.flushSem <- struct{}{}:
+	default:
+		select {
+		case s.flushSem <- struct{}{}:
+		case <-ctx.Done():
+			return fmt.Errorf("goreach/flush: waiting for flush in progress: %w", ctx.Err())
+		}
+	}
+	defer func() { <-s.flushSem }()
 
 	tmpDir, err := os.MkdirTemp("", "goreach-flush-*")
 	if err != nil {
@@ -223,7 +324,7 @@ func (s *flushState) doFlush() error {
 		return nil
 	}
 
-	if err := s.cfg.Storage.Store(context.Background(), files, newMetadata(s.cfg)); err != nil {
+	if err := s.cfg.Storage.Store(ctx, files, newMetadata(s.cfg)); err != nil {
 		return fmt.Errorf("goreach/flush: store: %w", err)
 	}
 
