@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/cover"
@@ -507,5 +508,18 @@ func TestAnalyzeFile_ThresholdExactBoundary(t *testing.T) {
 	}
 	if len(result.Functions) != 0 {
 		t.Errorf("expected 0 functions above threshold, got %d", len(result.Functions))
+	}
+}
+
+// TestResolvePackages_ErrorIncludesGoListOutput checks that a go list failure
+// reports why it failed, not just the exit status.
+func TestResolvePackages_ErrorIncludesGoListOutput(t *testing.T) {
+	const pkg = "nonexistent.example.com/fake/pkg"
+	_, err := resolvePackages([]string{pkg})
+	if err == nil {
+		t.Fatal("expected error for a package go list cannot find")
+	}
+	if !strings.Contains(err.Error(), pkg) {
+		t.Errorf("error should carry go list's message naming %s, got: %v", pkg, err)
 	}
 }
