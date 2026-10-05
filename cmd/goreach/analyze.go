@@ -61,19 +61,19 @@ func runAnalyze(args []string) error {
 			return parseErr
 		}
 		if len(groups) == 1 {
-			text, textErr := groups[0].ParseProfile()
-			if textErr != nil {
-				return textErr
+			profiles, profErr := groups[0].Profiles()
+			if profErr != nil {
+				return profErr
 			}
-			rpt, err = analyzeProfileText(text, opts)
+			rpt, err = analysis.Run(profiles, opts)
 		} else {
 			// Newest build (last element) gets full AST analysis.
 			newest := groups[len(groups)-1]
-			newestText, textErr := newest.ParseProfile()
-			if textErr != nil {
-				return textErr
+			profiles, profErr := newest.Profiles()
+			if profErr != nil {
+				return profErr
 			}
-			newestRpt, rErr := analyzeProfileText(newestText, opts)
+			newestRpt, rErr := analysis.Run(profiles, opts)
 			if rErr != nil {
 				return rErr
 			}
@@ -95,17 +95,17 @@ func runAnalyze(args []string) error {
 			rpt, err = merge.Merge(reports)
 		}
 	case *profilePath != "":
-		profileText, parseErr := covparse.ParseProfileFile(*profilePath)
+		profiles, parseErr := covparse.ParseProfileFile(*profilePath)
 		if parseErr != nil {
 			return parseErr
 		}
-		rpt, err = analyzeProfileText(profileText, opts)
+		rpt, err = analysis.Run(profiles, opts)
 	default:
-		profileText, parseErr := covparse.ParseDir(*coverDir)
+		profiles, parseErr := covparse.ParseDir(*coverDir)
 		if parseErr != nil {
 			return parseErr
 		}
-		rpt, err = analyzeProfileText(profileText, opts)
+		rpt, err = analysis.Run(profiles, opts)
 	}
 	if err != nil {
 		return err
@@ -123,15 +123,6 @@ func runAnalyze(args []string) error {
 	}
 
 	return rpt.Write(w, *pretty)
-}
-
-// analyzeProfileText parses a text coverage profile and runs analysis on it.
-func analyzeProfileText(text string, opts analysis.Options) (*report.Report, error) {
-	profiles, err := parseProfileText(text)
-	if err != nil {
-		return nil, err
-	}
-	return analysis.Run(profiles, opts)
 }
 
 // reportFromFuncCoverage builds a minimal Report from covdata func output.

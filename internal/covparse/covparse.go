@@ -1,4 +1,5 @@
-// Package covparse converts GOCOVERDIR binary coverage data into text profiles.
+// Package covparse converts GOCOVERDIR binary coverage data into parsed
+// coverage profiles by driving `go tool covdata`.
 package covparse
 
 import (
@@ -9,42 +10,39 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/cover"
 )
 
-// ParseDir converts a single GOCOVERDIR directory to a text coverage profile.
+// ParseDir converts a single GOCOVERDIR directory into coverage profiles.
 // It invokes `go tool covdata textfmt` under the hood.
-func ParseDir(dir string) (string, error) {
+func ParseDir(dir string) ([]*cover.Profile, error) {
 	tmpFile, err := os.CreateTemp("", "goreach-profile-*.txt")
 	if err != nil {
-		return "", fmt.Errorf("covparse: create temp file: %w", err)
+		return nil, fmt.Errorf("covparse: create temp file: %w", err)
 	}
 	_ = tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
 
 	cmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+dir, "-o="+tmpFile.Name())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		_ = os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("covparse: go tool covdata textfmt: %w\n%s", err, out)
+		return nil, fmt.Errorf("covparse: go tool covdata textfmt: %w\n%s", err, out)
 	}
 
-	data, err := os.ReadFile(tmpFile.Name())
-	_ = os.Remove(tmpFile.Name())
-	if err != nil {
-		return "", fmt.Errorf("covparse: read profile: %w", err)
-	}
-	return string(data), nil
+	return ParseProfileFile(tmpFile.Name())
 }
 
-// mergeAndParse merges a set of coverage directories and returns the text profile.
+// mergeAndParse merges a set of coverage directories and returns their profiles.
 // If only one directory is provided, it parses directly without merging.
-func mergeAndParse(dirs []string) (string, error) {
+func mergeAndParse(dirs []string) ([]*cover.Profile, error) {
 	if len(dirs) == 1 {
 		return ParseDir(dirs[0])
 	}
 
 	mergeDir, err := os.MkdirTemp("", "goreach-merge-*")
 	if err != nil {
-		return "", fmt.Errorf("covparse: create merge dir: %w", err)
+		return nil, fmt.Errorf("covparse: create merge dir: %w", err)
 	}
 	defer os.RemoveAll(mergeDir)
 
@@ -52,7 +50,7 @@ func mergeAndParse(dirs []string) (string, error) {
 	cmd := exec.Command("go", "tool", "covdata", "merge", "-i="+joined, "-o="+mergeDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("covparse: go tool covdata merge: %w\n%s", err, out)
+		return nil, fmt.Errorf("covparse: go tool covdata merge: %w\n%s", err, out)
 	}
 
 	return ParseDir(mergeDir)
@@ -81,13 +79,14 @@ func groupByMetaHash(dirs []string) (map[string][]string, error) {
 	return groups, nil
 }
 
-// ParseProfileFile reads and returns the contents of a text coverage profile file.
-func ParseProfileFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+// ParseProfileFile parses a text coverage profile file (the format written by
+// `go test -coverprofile` and `go tool covdata textfmt`).
+func ParseProfileFile(path string) ([]*cover.Profile, error) {
+	profiles, err := cover.ParseProfiles(path)
 	if err != nil {
-		return "", fmt.Errorf("covparse: read profile: %w", err)
+		return nil, fmt.Errorf("covparse: parse profile: %w", err)
 	}
-	return string(data), nil
+	return profiles, nil
 }
 
 // findCoverageDirs walks root and returns directories that contain coverage data files.

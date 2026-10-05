@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/tools/cover"
 )
 
 // BuildGroup represents a set of coverage directories that share the same
@@ -17,8 +19,8 @@ type BuildGroup struct {
 	NewestTimestamp time.Time // newest covcounters file ModTime in the group
 }
 
-// ParseProfile merges the group's coverage directories and returns a text profile.
-func (g BuildGroup) ParseProfile() (string, error) {
+// Profiles merges the group's coverage directories and returns their profiles.
+func (g BuildGroup) Profiles() ([]*cover.Profile, error) {
 	return mergeAndParse(g.Dirs)
 }
 

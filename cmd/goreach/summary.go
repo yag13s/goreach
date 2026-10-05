@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/tools/cover"
+
 	"github.com/yag13s/goreach/internal/covparse"
 	"github.com/yag13s/goreach/internal/report"
 )
@@ -22,26 +24,21 @@ func runSummary(args []string) error {
 		return fmt.Errorf("either -profile or -coverdir is required")
 	}
 
-	var profileText string
+	var profiles []*cover.Profile
 	var err error
 	switch {
 	case *profilePath != "":
-		profileText, err = covparse.ParseProfileFile(*profilePath)
+		profiles, err = covparse.ParseProfileFile(*profilePath)
 	case *recursive:
 		// Use only the newest build group's profile for summary.
 		var groups []covparse.BuildGroup
 		groups, err = covparse.ParseDirRecursiveGrouped(*coverDir)
 		if err == nil && len(groups) > 0 {
-			profileText, err = groups[len(groups)-1].ParseProfile()
+			profiles, err = groups[len(groups)-1].Profiles()
 		}
 	default:
-		profileText, err = covparse.ParseDir(*coverDir)
+		profiles, err = covparse.ParseDir(*coverDir)
 	}
-	if err != nil {
-		return err
-	}
-
-	profiles, err := parseProfileText(profileText)
 	if err != nil {
 		return err
 	}

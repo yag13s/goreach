@@ -17,12 +17,34 @@ func TestParseProfileFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := ParseProfileFile(profilePath)
+	profiles, err := ParseProfileFile(profilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != content {
-		t.Errorf("got %q, want %q", result, content)
+	if len(profiles) != 1 {
+		t.Fatalf("got %d profiles, want 1", len(profiles))
+	}
+	p := profiles[0]
+	if p.FileName != "example.com/pkg/foo.go" || p.Mode != "set" {
+		t.Errorf("got file %q mode %q, want example.com/pkg/foo.go / set", p.FileName, p.Mode)
+	}
+	if len(p.Blocks) != 1 || p.Blocks[0].NumStmt != 2 || p.Blocks[0].Count != 1 {
+		t.Errorf("unexpected blocks: %+v", p.Blocks)
+	}
+}
+
+func TestParseProfileFile_Malformed(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "coverage.txt")
+	if err := os.WriteFile(profilePath, []byte("not a coverage profile\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ParseProfileFile(profilePath)
+	if err == nil {
+		t.Fatal("expected error for malformed profile")
+	}
+	if !strings.Contains(err.Error(), "covparse") {
+		t.Errorf("error should mention covparse, got: %v", err)
 	}
 }
 
