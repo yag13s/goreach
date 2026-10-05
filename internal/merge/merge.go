@@ -131,10 +131,12 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 					if !best.fromBase && len(fn.UnreachedBlocks) > 0 {
 						mf.Functions[k].LatestUnreachedBlocks = fn.UnreachedBlocks
 					}
-					// Reconcile: if the winner came from covdata func
-					// (TotalStatements==0) but the base has real counts,
-					// reconstruct statement counts from the base.
-					if best.totalStatements == 0 && fn.TotalStatements > 0 {
+					// Statement counts always describe the base (current)
+					// source: an older build's counts are for code that may
+					// have changed since, and a covdata func skeleton has
+					// none at all. Apply the winning percentage to the
+					// base's statement count instead.
+					if !best.fromBase && fn.TotalStatements > 0 {
 						total := fn.TotalStatements
 						covered := int(math.Round(float64(total) * best.coveragePercent / 100))
 						mf.Functions[k].TotalStatements = total
@@ -144,6 +146,7 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 					mf.Functions[k] = fn
 				}
 			}
+			mf.Total = mergedFileTotal(file, mf.Functions)
 			mp.Files[j] = mf
 		}
 		merged.Packages[i] = mp
@@ -153,25 +156,42 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 	return merged
 }
 
-// recomputeStats recalculates aggregate statistics bottom-up:
-// function → file → package → report total.
+// mergedFileTotal returns the totals of a base file whose functions have been
+// replaced by merged.
+//
+// A file's totals can cover more than the functions it lists: the report may
+// have been filtered, and statements outside any function declaration belong
+// to no function. That remainder is carried over from base unchanged, so
+// totals never depend on which functions happen to be listed.
+func mergedFileTotal(base report.FileReport, merged []report.FuncReport) report.CoverageStats {
+	total, covered := base.Total.TotalStatements, base.Total.CoveredStatements
+	for _, fn := range base.Functions {
+		total -= fn.TotalStatements
+		covered -= fn.CoveredStatements
+	}
+	// Totals that are missing or smaller than the listed functions leave no
+	// remainder to carry.
+	total = max(total, 0)
+	covered = min(max(covered, 0), total)
+
+	for _, fn := range merged {
+		total += fn.TotalStatements
+		covered += fn.CoveredStatements
+	}
+	return report.NewCoverageStats(covered, total)
+}
+
+// recomputeStats recalculates aggregate statistics from the file totals up:
+// file → package → report total.
 func recomputeStats(r *report.Report) {
 	var reportTotal, reportCovered int
 
 	for i := range r.Packages {
 		var pkgTotal, pkgCovered int
 
-		for j := range r.Packages[i].Files {
-			var fileTotal, fileCovered int
-
-			for _, fn := range r.Packages[i].Files[j].Functions {
-				fileTotal += fn.TotalStatements
-				fileCovered += fn.CoveredStatements
-			}
-
-			r.Packages[i].Files[j].Total = report.NewCoverageStats(fileCovered, fileTotal)
-			pkgTotal += fileTotal
-			pkgCovered += fileCovered
+		for _, file := range r.Packages[i].Files {
+			pkgTotal += file.Total.TotalStatements
+			pkgCovered += file.Total.CoveredStatements
 		}
 
 		r.Packages[i].Total = report.NewCoverageStats(pkgCovered, pkgTotal)

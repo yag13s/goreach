@@ -509,3 +509,93 @@ func TestOnto_TiePrefersBase(t *testing.T) {
 		t.Errorf("expected base's blocks to win the tie, got %+v / %+v", foo.UnreachedBlocks, foo.LatestUnreachedBlocks)
 	}
 }
+
+// reportWithFile builds a report with a single file whose totals are given
+// explicitly, so they can exceed what the listed functions add up to.
+func reportWithFile(total report.CoverageStats, funcs ...report.FuncReport) *report.Report {
+	return &report.Report{
+		Version: report.SchemaVersion,
+		Mode:    "atomic",
+		Total:   total,
+		Packages: []report.PackageReport{{
+			ImportPath: "example.com/pkg",
+			Total:      total,
+			Files: []report.FileReport{{
+				FileName:  "example.com/pkg/foo.go",
+				Total:     total,
+				Functions: funcs,
+			}},
+		}},
+	}
+}
+
+func TestOnto_TotalsKeepStatementsNotListedInBase(t *testing.T) {
+	// The file has 20 statements, 12 covered. Only Cold (2/8) is listed: the
+	// other 12 statements (10 covered) belong to functions that were filtered
+	// out, or to no function at all.
+	base := reportWithFile(report.NewCoverageStats(12, 20),
+		report.FuncReport{Name: "Cold", TotalStatements: 8, CoveredStatements: 2, CoveragePercent: 25},
+	)
+	other := reportWithFile(report.NewCoverageStats(0, 0),
+		report.FuncReport{Name: "Cold", CoveragePercent: 75},
+	)
+
+	got := Onto(base, other)
+
+	// Cold improves from 2/8 to 6/8; the unlisted 10/12 is carried over.
+	want := report.NewCoverageStats(16, 20)
+	if got.Total != want || got.Packages[0].Total != want || got.Packages[0].Files[0].Total != want {
+		t.Errorf("totals = report %+v, package %+v, file %+v; want %+v",
+			got.Total, got.Packages[0].Total, got.Packages[0].Files[0].Total, want)
+	}
+}
+
+func TestOnto_TotalsUnchangedWhenNothingImproves(t *testing.T) {
+	base := reportWithFile(report.NewCoverageStats(12, 20),
+		report.FuncReport{Name: "Cold", TotalStatements: 8, CoveredStatements: 2, CoveragePercent: 25},
+	)
+	other := reportWithFile(report.NewCoverageStats(0, 0),
+		report.FuncReport{Name: "Cold", CoveragePercent: 10},
+	)
+
+	if got, want := Onto(base, other).Total, report.NewCoverageStats(12, 20); got != want {
+		t.Errorf("total = %+v, want base's %+v", got, want)
+	}
+}
+
+func TestOnto_StatementCountsComeFromBase(t *testing.T) {
+	// Foo had 10 statements in the old build and has 12 now. The old build's
+	// percentage wins, but its statement count describes code that changed.
+	base := reportWithFile(report.NewCoverageStats(3, 12),
+		report.FuncReport{Name: "Foo", TotalStatements: 12, CoveredStatements: 3, CoveragePercent: 25},
+	)
+	old := reportWithFile(report.NewCoverageStats(10, 10),
+		report.FuncReport{Name: "Foo", TotalStatements: 10, CoveredStatements: 10, CoveragePercent: 100},
+	)
+
+	got := Onto(base, old)
+
+	foo := findFunc(got, "Foo")
+	if foo.CoveragePercent != 100 || foo.TotalStatements != 12 || foo.CoveredStatements != 12 {
+		t.Errorf("Foo = %.0f%% (%d/%d), want 100%% (12/12)", foo.CoveragePercent, foo.CoveredStatements, foo.TotalStatements)
+	}
+	if want := report.NewCoverageStats(12, 12); got.Total != want {
+		t.Errorf("total = %+v, want %+v", got.Total, want)
+	}
+}
+
+func TestOnto_TotalsFallBackToFunctionsWhenBaseHasNone(t *testing.T) {
+	// A base without usable totals (hand-written, or totals smaller than its
+	// functions) has no remainder to carry: totals are the sum of functions.
+	base := reportWithFile(report.CoverageStats{},
+		report.FuncReport{Name: "A", TotalStatements: 4, CoveredStatements: 1, CoveragePercent: 25},
+		report.FuncReport{Name: "B", TotalStatements: 6, CoveredStatements: 6, CoveragePercent: 100},
+	)
+	other := reportWithFile(report.CoverageStats{},
+		report.FuncReport{Name: "A", CoveragePercent: 50},
+	)
+
+	if got, want := Onto(base, other).Total, report.NewCoverageStats(8, 10); got != want {
+		t.Errorf("total = %+v, want %+v", got, want)
+	}
+}

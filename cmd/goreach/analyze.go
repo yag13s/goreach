@@ -18,8 +18,7 @@ func runAnalyze(args []string) error {
 	coverDir := fs.String("coverdir", "", "GOCOVERDIR path (mutually exclusive with -profile)")
 	recursive := fs.Bool("r", false, "recursively search -coverdir for coverage data")
 	pkgFilter := fs.String("pkg", "", "package filter (comma-separated import path prefixes)")
-	threshold := fs.Float64("threshold", 100, "show functions with coverage below this percentage")
-	minStmts := fs.Int("min-statements", 0, "show functions with at least N unreached statements")
+	filterFlags := addFilterFlags(fs)
 	outputFile := fs.String("o", "", "output file (default: stdout)")
 	pretty := fs.Bool("pretty", false, "pretty-print JSON output")
 	_ = fs.Parse(args) // ExitOnError: never returns error
@@ -33,11 +32,9 @@ func runAnalyze(args []string) error {
 	if *recursive && *coverDir == "" {
 		return fmt.Errorf("-r requires -coverdir")
 	}
-	if *threshold < 0 || *threshold > 100 {
-		return fmt.Errorf("-threshold must be between 0 and 100")
-	}
-	if *minStmts < 0 {
-		return fmt.Errorf("-min-statements must be non-negative")
+	filter, err := filterFlags.filter()
+	if err != nil {
+		return err
 	}
 
 	var prefixes []string
@@ -45,14 +42,9 @@ func runAnalyze(args []string) error {
 		prefixes = strings.Split(*pkgFilter, ",")
 	}
 
-	opts := analysis.Options{
-		PkgPrefixes:   prefixes,
-		Threshold:     *threshold,
-		MinStatements: *minStmts,
-	}
+	opts := analysis.Options{PkgPrefixes: prefixes}
 
 	var rpt *report.Report
-	var err error
 
 	switch {
 	case *recursive:
@@ -78,6 +70,9 @@ func runAnalyze(args []string) error {
 		return err
 	}
 	rpt.GeneratedAt = time.Now().UTC()
+
+	// Filter last, once coverage from every build has been merged in.
+	rpt.FilterFunctions(filter)
 
 	return writeReport(rpt, *outputFile, *pretty)
 }

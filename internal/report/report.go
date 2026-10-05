@@ -117,6 +117,38 @@ func cloneList[T any](s []T) []T {
 	return append(make([]T, 0, len(s)), s...)
 }
 
+// FuncFilter selects which functions a report lists.
+type FuncFilter struct {
+	// MaxCoverage keeps functions whose coverage percentage is at most this
+	// value. 100 keeps every function.
+	MaxCoverage float64
+
+	// MinUnreached keeps functions with at least this many unreached
+	// statements. 0 keeps every function.
+	MinUnreached int
+}
+
+func (f FuncFilter) keeps(fn FuncReport) bool {
+	return fn.CoveragePercent <= f.MaxCoverage &&
+		fn.TotalStatements-fn.CoveredStatements >= f.MinUnreached
+}
+
+// FilterFunctions removes the functions f does not keep.
+//
+// Only the function lists change. File, package and report totals keep
+// describing all the code, so a filtered report shows the same coverage as
+// the unfiltered one. Files left with no functions stay in the report.
+func (r *Report) FilterFunctions(f FuncFilter) {
+	for i := range r.Packages {
+		for j := range r.Packages[i].Files {
+			file := &r.Packages[i].Files[j]
+			file.Functions = slices.DeleteFunc(file.Functions, func(fn FuncReport) bool {
+				return !f.keeps(fn)
+			})
+		}
+	}
+}
+
 // NewCoverageStats returns the stats for covered out of total statements.
 func NewCoverageStats(covered, total int) CoverageStats {
 	return CoverageStats{

@@ -90,9 +90,7 @@ func TestAnalyzeFile(t *testing.T) {
 		{Name: "Greet", StartLine: 13, StartCol: 1, EndLine: 18, EndCol: 2},
 	}
 
-	// Default options (threshold=100 shows all)
-	opts := Options{Threshold: 100}
-	result := analyzeFile(prof, funcs, opts)
+	result := analyzeFile(prof, funcs)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -104,23 +102,73 @@ func TestAnalyzeFile(t *testing.T) {
 		t.Errorf("covered statements = %d, want 3", result.Total.CoveredStatements)
 	}
 
-	// All 3 functions should be in the report since threshold=100
-	if len(result.Functions) != 3 {
-		t.Errorf("functions count = %d, want 3", len(result.Functions))
+	// Every function with statements is reported, fully covered or not.
+	wantFuncs := []struct {
+		name           string
+		covered, total int
+	}{{"Add", 1, 1}, {"Sub", 0, 1}, {"Greet", 2, 3}}
+	if len(result.Functions) != len(wantFuncs) {
+		t.Fatalf("functions count = %d, want %d", len(result.Functions), len(wantFuncs))
+	}
+	for i, want := range wantFuncs {
+		got := result.Functions[i]
+		if got.Name != want.name || got.CoveredStatements != want.covered || got.TotalStatements != want.total {
+			t.Errorf("function %d = %s %d/%d, want %s %d/%d", i,
+				got.Name, got.CoveredStatements, got.TotalStatements, want.name, want.covered, want.total)
+		}
+	}
+}
+
+// TestAnalyzeFile_BlocksOutsideFunctions tests that blocks belonging to no
+// function declaration (e.g. a function literal in a package-level var) still
+// count towards the file totals, which mirror the profile.
+func TestAnalyzeFile_BlocksOutsideFunctions(t *testing.T) {
+	prof := &cover.Profile{
+		FileName: "example.com/pkg/foo.go",
+		Mode:     "set",
+		Blocks: []cover.ProfileBlock{
+			{StartLine: 5, StartCol: 20, EndLine: 7, EndCol: 2, NumStmt: 2, Count: 1},    // inside FuncA
+			{StartLine: 100, StartCol: 1, EndLine: 110, EndCol: 2, NumStmt: 3, Count: 0}, // outside any function
+		},
+	}
+	funcs := []*astmap.FuncExtent{
+		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 7, EndCol: 2},
 	}
 
-	// Test threshold filter: only show functions with <50% coverage
-	opts = Options{Threshold: 50}
-	result = analyzeFile(prof, funcs, opts)
+	result := analyzeFile(prof, funcs)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
-	// Only Sub (0%) should be shown; Add (100%) and Greet (66.7%) are filtered
-	if len(result.Functions) != 1 {
-		t.Errorf("filtered functions count = %d, want 1", len(result.Functions))
+	if result.Total.TotalStatements != 5 || result.Total.CoveredStatements != 2 {
+		t.Errorf("file total = %d/%d, want 2/5", result.Total.CoveredStatements, result.Total.TotalStatements)
 	}
-	if len(result.Functions) > 0 && result.Functions[0].Name != "Sub" {
-		t.Errorf("expected Sub, got %s", result.Functions[0].Name)
+	if len(result.Functions) != 1 || result.Functions[0].TotalStatements != 2 {
+		t.Errorf("functions = %+v, want only FuncA with 2 statements", result.Functions)
+	}
+
+	// With no function declarations at all the file is still reported, with
+	// an empty (not nil) function list so it encodes as [].
+	result = analyzeFile(prof, nil)
+	if result == nil {
+		t.Fatal("expected non-nil result for a file with statements but no functions")
+	}
+	if result.Total.TotalStatements != 5 {
+		t.Errorf("file total statements = %d, want 5", result.Total.TotalStatements)
+	}
+	if result.Functions == nil || len(result.Functions) != 0 {
+		t.Errorf("functions = %#v, want empty non-nil slice", result.Functions)
+	}
+}
+
+// TestAnalyzeFile_NoStatements tests that a file whose profile has no
+// statements is left out of the report.
+func TestAnalyzeFile_NoStatements(t *testing.T) {
+	prof := &cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "set"}
+	funcs := []*astmap.FuncExtent{
+		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 7, EndCol: 2},
+	}
+	if result := analyzeFile(prof, funcs); result != nil {
+		t.Errorf("expected nil result, got %+v", result)
 	}
 }
 
@@ -193,51 +241,6 @@ func TestFuncReportUnreachedBlocks(t *testing.T) {
 	}
 }
 
-// TestAnalyzeFile_MinStatements tests that functions with unreached statements
-// below the MinStatements threshold are excluded from the report.
-func TestAnalyzeFile_MinStatements(t *testing.T) {
-	prof := &cover.Profile{
-		FileName: "example.com/pkg/foo.go",
-		Mode:     "set",
-		Blocks: []cover.ProfileBlock{
-			// FuncA: 3 stmts, 1 covered -> 2 unreached
-			{StartLine: 5, StartCol: 20, EndLine: 7, EndCol: 2, NumStmt: 1, Count: 1},
-			{StartLine: 8, StartCol: 2, EndLine: 9, EndCol: 2, NumStmt: 1, Count: 0},
-			{StartLine: 10, StartCol: 2, EndLine: 11, EndCol: 2, NumStmt: 1, Count: 0},
-			// FuncB: 5 stmts, 1 covered -> 4 unreached
-			{StartLine: 15, StartCol: 20, EndLine: 17, EndCol: 2, NumStmt: 1, Count: 1},
-			{StartLine: 18, StartCol: 2, EndLine: 19, EndCol: 2, NumStmt: 1, Count: 0},
-			{StartLine: 20, StartCol: 2, EndLine: 21, EndCol: 2, NumStmt: 1, Count: 0},
-			{StartLine: 22, StartCol: 2, EndLine: 23, EndCol: 2, NumStmt: 1, Count: 0},
-			{StartLine: 24, StartCol: 2, EndLine: 25, EndCol: 2, NumStmt: 1, Count: 0},
-		},
-	}
-
-	funcs := []*astmap.FuncExtent{
-		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 12, EndCol: 2},
-		{Name: "FuncB", StartLine: 15, StartCol: 1, EndLine: 26, EndCol: 2},
-	}
-
-	// MinStatements=3: FuncA has 2 unreached (excluded), FuncB has 4 unreached (included)
-	opts := Options{Threshold: 100, MinStatements: 3}
-	result := analyzeFile(prof, funcs, opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-
-	if len(result.Functions) != 1 {
-		t.Fatalf("functions count = %d, want 1", len(result.Functions))
-	}
-	if result.Functions[0].Name != "FuncB" {
-		t.Errorf("expected FuncB, got %s", result.Functions[0].Name)
-	}
-
-	// Total statements should still count both functions
-	if result.Total.TotalStatements != 8 {
-		t.Errorf("total statements = %d, want 8", result.Total.TotalStatements)
-	}
-}
-
 // TestAnalyzeFile_EmptyFunction tests that functions with no coverage blocks
 // (totalStmts == 0) are skipped entirely and don't appear in the report.
 func TestAnalyzeFile_EmptyFunction(t *testing.T) {
@@ -257,8 +260,7 @@ func TestAnalyzeFile_EmptyFunction(t *testing.T) {
 		{Name: "FuncB", StartLine: 15, StartCol: 1, EndLine: 18, EndCol: 2},
 	}
 
-	opts := Options{Threshold: 100}
-	result := analyzeFile(prof, funcs, opts)
+	result := analyzeFile(prof, funcs)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -272,29 +274,6 @@ func TestAnalyzeFile_EmptyFunction(t *testing.T) {
 	}
 	if result.Total.TotalStatements != 1 {
 		t.Errorf("total statements = %d, want 1", result.Total.TotalStatements)
-	}
-}
-
-// TestAnalyzeFile_AllEmpty tests that when all functions have zero statements,
-// analyzeFile returns nil.
-func TestAnalyzeFile_AllEmpty(t *testing.T) {
-	prof := &cover.Profile{
-		FileName: "example.com/pkg/foo.go",
-		Mode:     "set",
-		Blocks: []cover.ProfileBlock{
-			// Block that doesn't overlap any function
-			{StartLine: 100, StartCol: 1, EndLine: 110, EndCol: 2, NumStmt: 1, Count: 1},
-		},
-	}
-
-	funcs := []*astmap.FuncExtent{
-		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 7, EndCol: 2},
-	}
-
-	opts := Options{Threshold: 100}
-	result := analyzeFile(prof, funcs, opts)
-	if result != nil {
-		t.Errorf("expected nil result for all-empty functions, got %+v", result)
 	}
 }
 
@@ -356,7 +335,7 @@ func TestRunWithUnresolvableProfiles(t *testing.T) {
 	}
 
 	// Run should not error out; it should skip unresolvable packages
-	rpt, err := Run(profiles, Options{Threshold: 100})
+	rpt, err := Run(profiles, Options{})
 	if err != nil {
 		// resolvePackages may error when go list fails for fake packages
 		// That's acceptable - we just verify the function doesn't panic
@@ -395,10 +374,7 @@ func TestRunWithPkgPrefixFilter(t *testing.T) {
 	}
 
 	// Only include "nonexistent.example.com/included" prefix
-	opts := Options{
-		PkgPrefixes: []string{"nonexistent.example.com/included"},
-		Threshold:   100,
-	}
+	opts := Options{PkgPrefixes: []string{"nonexistent.example.com/included"}}
 
 	rpt, err := Run(profiles, opts)
 	if err != nil {
@@ -453,61 +429,6 @@ func TestBlockOverlapsFunc_SameLineEdgeCases(t *testing.T) {
 				t.Errorf("blockOverlapsFunc() = %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-// TestAnalyzeFile_NoFunctions tests analyzeFile with no function extents.
-func TestAnalyzeFile_NoFunctions(t *testing.T) {
-	prof := &cover.Profile{
-		FileName: "example.com/pkg/foo.go",
-		Mode:     "set",
-		Blocks: []cover.ProfileBlock{
-			{StartLine: 1, StartCol: 1, EndLine: 5, EndCol: 2, NumStmt: 1, Count: 1},
-		},
-	}
-
-	result := analyzeFile(prof, nil, Options{Threshold: 100})
-	if result != nil {
-		t.Errorf("expected nil result for no functions, got %+v", result)
-	}
-}
-
-// TestAnalyzeFile_ThresholdExactBoundary tests the boundary condition where
-// coverage percentage equals the threshold exactly.
-func TestAnalyzeFile_ThresholdExactBoundary(t *testing.T) {
-	// FuncA: 2 stmts, 1 covered -> 50% coverage
-	prof := &cover.Profile{
-		FileName: "example.com/pkg/foo.go",
-		Mode:     "set",
-		Blocks: []cover.ProfileBlock{
-			{StartLine: 5, StartCol: 20, EndLine: 7, EndCol: 2, NumStmt: 1, Count: 1},
-			{StartLine: 8, StartCol: 2, EndLine: 9, EndCol: 2, NumStmt: 1, Count: 0},
-		},
-	}
-
-	funcs := []*astmap.FuncExtent{
-		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 10, EndCol: 2},
-	}
-
-	// Threshold=50: coverage is exactly 50%, which is NOT > 50, so the function
-	// should be included in the report
-	opts := Options{Threshold: 50}
-	result := analyzeFile(prof, funcs, opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if len(result.Functions) != 1 {
-		t.Errorf("expected 1 function at exact threshold, got %d", len(result.Functions))
-	}
-
-	// Threshold=49: coverage is 50% which IS > 49, so it should be filtered
-	opts = Options{Threshold: 49}
-	result = analyzeFile(prof, funcs, opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if len(result.Functions) != 0 {
-		t.Errorf("expected 0 functions above threshold, got %d", len(result.Functions))
 	}
 }
 

@@ -244,3 +244,78 @@ func TestClone_EmptyListsEncodeAsArrays(t *testing.T) {
 		t.Errorf("expected packages to encode as [], got %s", buf.String())
 	}
 }
+
+// filterFixture is a report with one file holding functions at 0%, 50% and
+// 100% coverage, whose totals also count 4 statements outside any function.
+func filterFixture() *Report {
+	return &Report{
+		Version: SchemaVersion,
+		Total:   NewCoverageStats(9, 18),
+		Packages: []PackageReport{{
+			ImportPath: "example.com/pkg",
+			Total:      NewCoverageStats(9, 18),
+			Files: []FileReport{{
+				FileName: "example.com/pkg/foo.go",
+				Total:    NewCoverageStats(9, 18),
+				Functions: []FuncReport{
+					{Name: "Dead", TotalStatements: 6, CoveredStatements: 0, CoveragePercent: 0},
+					{Name: "Half", TotalStatements: 4, CoveredStatements: 2, CoveragePercent: 50},
+					{Name: "Full", TotalStatements: 4, CoveredStatements: 4, CoveragePercent: 100},
+				},
+			}},
+		}},
+	}
+}
+
+func TestFilterFunctions(t *testing.T) {
+	tests := []struct {
+		name   string
+		filter FuncFilter
+		want   []string
+	}{
+		{"keep all", FuncFilter{MaxCoverage: 100}, []string{"Dead", "Half", "Full"}},
+		{"threshold is inclusive", FuncFilter{MaxCoverage: 50}, []string{"Dead", "Half"}},
+		{"just below a function's coverage", FuncFilter{MaxCoverage: 49.9}, []string{"Dead"}},
+		{"zero threshold keeps dead code", FuncFilter{MaxCoverage: 0}, []string{"Dead"}},
+		{"min unreached is inclusive", FuncFilter{MaxCoverage: 100, MinUnreached: 2}, []string{"Dead", "Half"}},
+		{"min unreached above a function's count", FuncFilter{MaxCoverage: 100, MinUnreached: 3}, []string{"Dead"}},
+		{"both conditions must hold", FuncFilter{MaxCoverage: 50, MinUnreached: 7}, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := filterFixture()
+			r.FilterFunctions(tt.filter)
+
+			file := r.Packages[0].Files[0]
+			got := make([]string, 0, len(file.Functions))
+			for _, fn := range file.Functions {
+				got = append(got, fn.Name)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("functions = %v, want %v", got, tt.want)
+			}
+
+			// Totals describe all the code, whatever is listed.
+			want := NewCoverageStats(9, 18)
+			if r.Total != want || r.Packages[0].Total != want || file.Total != want {
+				t.Errorf("totals changed: report %+v, package %+v, file %+v", r.Total, r.Packages[0].Total, file.Total)
+			}
+		})
+	}
+}
+
+func TestFilterFunctions_EmptiedFileStaysAsEmptyArray(t *testing.T) {
+	r := filterFixture()
+	r.FilterFunctions(FuncFilter{MaxCoverage: 50, MinUnreached: 7})
+
+	if len(r.Packages[0].Files) != 1 {
+		t.Fatalf("file was removed; its totals would be lost from the package")
+	}
+	var buf bytes.Buffer
+	if err := r.Write(&buf, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `"functions":[]`) {
+		t.Errorf("expected functions to encode as [], got %s", buf.String())
+	}
+}
