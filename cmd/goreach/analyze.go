@@ -3,15 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/yag13s/goreach/internal/analysis"
 	"github.com/yag13s/goreach/internal/covparse"
-	"github.com/yag13s/goreach/internal/merge"
+	"github.com/yag13s/goreach/internal/multibuild"
 	"github.com/yag13s/goreach/internal/report"
 )
 
@@ -32,6 +29,9 @@ func runAnalyze(args []string) error {
 	}
 	if *profilePath != "" && *coverDir != "" {
 		return fmt.Errorf("-profile and -coverdir are mutually exclusive")
+	}
+	if *recursive && *coverDir == "" {
+		return fmt.Errorf("-r requires -coverdir")
 	}
 	if *threshold < 0 || *threshold > 100 {
 		return fmt.Errorf("-threshold must be between 0 and 100")
@@ -56,44 +56,11 @@ func runAnalyze(args []string) error {
 
 	switch {
 	case *recursive:
-		groups, parseErr := covparse.FindBuildGroups(*coverDir)
-		if parseErr != nil {
-			return parseErr
+		groups, groupErr := covparse.FindBuildGroups(*coverDir)
+		if groupErr != nil {
+			return groupErr
 		}
-		if len(groups) == 1 {
-			profiles, profErr := groups[0].Profiles()
-			if profErr != nil {
-				return profErr
-			}
-			rpt, err = analysis.Run(profiles, opts)
-		} else {
-			// Newest build (last element) gets full AST analysis.
-			newest := groups[len(groups)-1]
-			profiles, profErr := newest.Profiles()
-			if profErr != nil {
-				return profErr
-			}
-			newestRpt, rErr := analysis.Run(profiles, opts)
-			if rErr != nil {
-				return rErr
-			}
-			newestRpt.GeneratedAt = time.Now().UTC()
-
-			reports := make([]*report.Report, 0, len(groups))
-			// Older builds use covdata func (no AST dependency).
-			for _, g := range groups[:len(groups)-1] {
-				funcCov, fErr := covparse.RunCovdataFunc(g.Dirs)
-				if fErr != nil {
-					return fErr
-				}
-				r := reportFromFuncCoverage(funcCov, opts)
-				r.GeneratedAt = g.NewestTimestamp
-				reports = append(reports, r)
-			}
-			reports = append(reports, newestRpt)
-
-			rpt, err = merge.Merge(reports)
-		}
+		rpt, err = multibuild.Analyze(groups, opts)
 	case *profilePath != "":
 		profiles, parseErr := covparse.ParseProfileFile(*profilePath)
 		if parseErr != nil {
@@ -112,96 +79,5 @@ func runAnalyze(args []string) error {
 	}
 	rpt.GeneratedAt = time.Now().UTC()
 
-	w := os.Stdout
-	if *outputFile != "" {
-		f, err := os.Create(*outputFile)
-		if err != nil {
-			return fmt.Errorf("create output file: %w", err)
-		}
-		defer f.Close()
-		w = f
-	}
-
-	return rpt.Write(w, *pretty)
-}
-
-// reportFromFuncCoverage builds a minimal Report from covdata func output.
-// TotalStatements/CoveredStatements are set to 0 since covdata func only
-// provides a coverage percentage. The merge step will reconcile these
-// using the base (newest build) report's statement counts.
-func reportFromFuncCoverage(funcs []covparse.FuncCoverage, opts analysis.Options) *report.Report {
-	// Group by package (directory portion of FileName)
-	type fileData struct {
-		fileName  string
-		functions []report.FuncReport
-	}
-	type pkgData struct {
-		files map[string]*fileData
-	}
-
-	pkgs := make(map[string]*pkgData)
-	for _, fc := range funcs {
-		pkg := filepath.ToSlash(filepath.Dir(fc.FileName))
-
-		if len(opts.PkgPrefixes) > 0 {
-			matched := false
-			for _, p := range opts.PkgPrefixes {
-				if strings.HasPrefix(pkg, p) {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				continue
-			}
-		}
-
-		if pkgs[pkg] == nil {
-			pkgs[pkg] = &pkgData{files: make(map[string]*fileData)}
-		}
-		fd := pkgs[pkg].files[fc.FileName]
-		if fd == nil {
-			fd = &fileData{fileName: fc.FileName}
-			pkgs[pkg].files[fc.FileName] = fd
-		}
-		fd.functions = append(fd.functions, report.FuncReport{
-			Name:            fc.FuncName,
-			CoveragePercent: fc.CoveragePercent,
-		})
-	}
-
-	pkgKeys := make([]string, 0, len(pkgs))
-	for k := range pkgs {
-		pkgKeys = append(pkgKeys, k)
-	}
-	sort.Strings(pkgKeys)
-
-	pkgReports := make([]report.PackageReport, 0, len(pkgs))
-	for _, importPath := range pkgKeys {
-		pd := pkgs[importPath]
-		fileKeys := make([]string, 0, len(pd.files))
-		for k := range pd.files {
-			fileKeys = append(fileKeys, k)
-		}
-		sort.Strings(fileKeys)
-
-		fileReports := make([]report.FileReport, 0, len(pd.files))
-		for _, fk := range fileKeys {
-			fd := pd.files[fk]
-			fileReports = append(fileReports, report.FileReport{
-				FileName:  fd.fileName,
-				Functions: fd.functions,
-			})
-		}
-		pkgReports = append(pkgReports, report.PackageReport{
-			ImportPath: importPath,
-			Files:      fileReports,
-		})
-	}
-
-	return &report.Report{
-		Version:  1,
-		Mode:     "covdata-func",
-		Packages: pkgReports,
-	}
+	return writeReport(rpt, *outputFile, *pretty)
 }

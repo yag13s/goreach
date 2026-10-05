@@ -51,29 +51,49 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 			base = r
 		}
 	}
+	others := make([]*report.Report, 0, len(reports)-1)
+	for _, r := range reports {
+		if r != base {
+			others = append(others, r)
+		}
+	}
 
+	return Onto(base, others...), nil
+}
+
+// Onto merges others onto base: the result has base's structure (packages,
+// files, functions, line numbers), with each function's coverage replaced by
+// the maximum observed across base and others. On a tie, base wins.
+//
+// Use it instead of [Merge] when the caller already knows which report
+// describes the current source.
+func Onto(base *report.Report, others ...*report.Report) *report.Report {
 	// Build a lookup of max coverage per function across all reports.
 	lookup := make(map[funcKey]*funcEntry)
-	for _, r := range reports {
+	consider := func(r *report.Report, isBase bool) {
 		for _, pkg := range r.Packages {
 			for _, file := range pkg.Files {
 				for _, fn := range file.Functions {
 					key := funcKey{fileName: file.FileName, funcName: fn.Name}
 					existing, ok := lookup[key]
 					if !ok || fn.CoveragePercent > existing.coveragePercent ||
-						(fn.CoveragePercent == existing.coveragePercent && r == base) {
+						(fn.CoveragePercent == existing.coveragePercent && isBase) {
 						lookup[key] = &funcEntry{
 							coveragePercent:   fn.CoveragePercent,
 							coveredStatements: fn.CoveredStatements,
 							totalStatements:   fn.TotalStatements,
 							unreachedBlocks:   fn.UnreachedBlocks,
-							fromBase:          r == base,
+							fromBase:          isBase,
 						}
 					}
 				}
 			}
 		}
 	}
+	for _, r := range others {
+		consider(r, false)
+	}
+	consider(base, true)
 
 	// Deep-copy the base report structure and apply best coverage values.
 	merged := &report.Report{
@@ -130,7 +150,7 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 	}
 
 	recomputeStats(merged)
-	return merged, nil
+	return merged
 }
 
 // recomputeStats recalculates aggregate statistics bottom-up:

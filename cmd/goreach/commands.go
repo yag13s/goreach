@@ -36,17 +36,7 @@ func runMerge(args []string) error {
 		return err
 	}
 
-	w := os.Stdout
-	if *outputFile != "" {
-		f, err := os.Create(*outputFile)
-		if err != nil {
-			return fmt.Errorf("create output file: %w", err)
-		}
-		defer f.Close()
-		w = f
-	}
-
-	return merged.Write(w, *pretty)
+	return writeReport(merged, *outputFile, *pretty)
 }
 
 func runView(args []string) error {

@@ -474,3 +474,38 @@ func TestMerge_SingleReport_NoLatestBlocks(t *testing.T) {
 		t.Errorf("UnreachedBlocks len = %d, want 1", len(foo.UnreachedBlocks))
 	}
 }
+
+func TestOnto_ExplicitBaseIgnoresTimestamps(t *testing.T) {
+	// base is older by timestamp, but the caller says it is the current source.
+	base := makeReport(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), map[string]float64{"Foo": 20})
+	base.Packages[0].Files[0].Functions[0].Line = 42
+	other := makeReport(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), map[string]float64{"Foo": 80, "Gone": 90})
+
+	got := Onto(base, other)
+
+	if len(got.Packages[0].Files[0].Functions) != 1 {
+		t.Fatalf("expected only base's functions, got %+v", got.Packages[0].Files[0].Functions)
+	}
+	foo := findFunc(got, "Foo")
+	if foo.CoveragePercent != 80 {
+		t.Errorf("Foo coverage = %v, want 80 (max across reports)", foo.CoveragePercent)
+	}
+	if foo.Line != 42 {
+		t.Errorf("Foo line = %d, want 42 (from base)", foo.Line)
+	}
+	if got.Mode != "merged" {
+		t.Errorf("mode = %q, want merged", got.Mode)
+	}
+}
+
+func TestOnto_TiePrefersBase(t *testing.T) {
+	blocks := []report.UnreachedBlock{{StartLine: 5, EndLine: 6, NumStatements: 1}}
+	base := makeReport(time.Time{}, map[string]float64{"Foo": 50})
+	base.Packages[0].Files[0].Functions[0].UnreachedBlocks = blocks
+	other := makeReport(time.Time{}, map[string]float64{"Foo": 50})
+
+	foo := findFunc(Onto(base, other), "Foo")
+	if len(foo.UnreachedBlocks) != 1 || foo.LatestUnreachedBlocks != nil {
+		t.Errorf("expected base's blocks to win the tie, got %+v / %+v", foo.UnreachedBlocks, foo.LatestUnreachedBlocks)
+	}
+}
