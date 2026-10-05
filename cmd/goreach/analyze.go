@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -30,6 +29,9 @@ func runAnalyze(args []string) error {
 	}
 	if *profilePath != "" && *coverDir != "" {
 		return fmt.Errorf("-profile and -coverdir are mutually exclusive")
+	}
+	if *recursive && *coverDir == "" {
+		return fmt.Errorf("-r requires -coverdir")
 	}
 	if *threshold < 0 || *threshold > 100 {
 		return fmt.Errorf("-threshold must be between 0 and 100")
@@ -77,15 +79,5 @@ func runAnalyze(args []string) error {
 	}
 	rpt.GeneratedAt = time.Now().UTC()
 
-	w := os.Stdout
-	if *outputFile != "" {
-		f, err := os.Create(*outputFile)
-		if err != nil {
-			return fmt.Errorf("create output file: %w", err)
-		}
-		defer f.Close()
-		w = f
-	}
-
-	return rpt.Write(w, *pretty)
+	return writeReport(rpt, *outputFile, *pretty)
 }

@@ -17,52 +17,60 @@ func init() {
 	}
 }
 
+// command is a goreach subcommand.
+type command struct {
+	name    string
+	summary string
+	run     func(args []string) error
+}
+
+var commands = []command{
+	{"analyze", "Analyze coverage data and output JSON report", runAnalyze},
+	{"merge", "Merge multiple report.json files (max coverage per function)", runMerge},
+	{"summary", "Print coverage summary as text", runSummary},
+	{"view", "Open report.json in browser UI", runView},
+	{"version", "Print version information", runVersion},
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
+	name := os.Args[1]
+	switch name {
 	case "-h", "-help", "--help", "help":
 		usage()
 		return
-	case "version":
-		fmt.Printf("goreach %s\n", version)
-	case "analyze":
-		if err := runAnalyze(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "goreach analyze: %v\n", err)
-			os.Exit(1)
-		}
-	case "summary":
-		if err := runSummary(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "goreach summary: %v\n", err)
-			os.Exit(1)
-		}
-	case "merge":
-		if err := runMerge(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "goreach merge: %v\n", err)
-			os.Exit(1)
-		}
-	case "view":
-		if err := runView(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "goreach view: %v\n", err)
-			os.Exit(1)
-		}
-	default:
-		fmt.Fprintf(os.Stderr, "goreach: unknown command %q\n", os.Args[1])
-		usage()
-		os.Exit(1)
 	}
+
+	for _, cmd := range commands {
+		if cmd.name != name {
+			continue
+		}
+		if err := cmd.run(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "goreach %s: %v\n", name, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "goreach: unknown command %q\n", name)
+	usage()
+	os.Exit(1)
+}
+
+func runVersion([]string) error {
+	fmt.Printf("goreach %s\n", version)
+	return nil
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `Usage: goreach <command> [flags]
-
-Commands:
-  analyze   Analyze coverage data and output JSON report
-  merge     Merge multiple report.json files (max coverage per function)
-  summary   Print coverage summary as text
-  view      Open report.json in browser UI
-  version   Print version information`)
+	fmt.Fprintln(os.Stderr, "Usage: goreach <command> [flags]")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Commands:")
+	for _, cmd := range commands {
+		fmt.Fprintf(os.Stderr, "  %-9s %s\n", cmd.name, cmd.summary)
+	}
 }
