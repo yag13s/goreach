@@ -521,7 +521,7 @@ All values are p50 (median) over 50 iterations. Measured with `curl` from the sa
 
 ## Requirements
 
-- Go 1.26+
+- Go 1.27+
 - `go tool covdata` (included with Go)
 
 ## License
