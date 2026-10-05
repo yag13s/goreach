@@ -2,85 +2,10 @@ package covparse
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
-
-	"golang.org/x/tools/cover"
 )
-
-// BuildGroup represents a set of coverage directories that share the same
-// covmeta hash set (i.e. they were produced by the same build).
-type BuildGroup struct {
-	Dirs            []string
-	NewestTimestamp time.Time // newest covcounters file ModTime in the group
-}
-
-// Profiles merges the group's coverage directories and returns their profiles.
-func (g BuildGroup) Profiles() ([]*cover.Profile, error) {
-	return mergeAndParse(g.Dirs)
-}
-
-// ParseDirRecursiveGrouped walks dir recursively, groups coverage directories
-// by covmeta hash, and returns BuildGroups sorted by newest covcounters
-// timestamp ascending (last element = newest build).
-func ParseDirRecursiveGrouped(dir string) ([]BuildGroup, error) {
-	covDirs, err := findCoverageDirs(dir)
-	if err != nil {
-		return nil, err
-	}
-	if len(covDirs) == 0 {
-		return nil, fmt.Errorf("covparse: no coverage data found under %s", dir)
-	}
-
-	hashGroups, err := groupByMetaHash(covDirs)
-	if err != nil {
-		return nil, err
-	}
-
-	groups := make([]BuildGroup, 0, len(hashGroups))
-	for _, dirs := range hashGroups {
-		ts, tsErr := newestCounterTime(dirs)
-		if tsErr != nil {
-			return nil, tsErr
-		}
-		groups = append(groups, BuildGroup{Dirs: dirs, NewestTimestamp: ts})
-	}
-
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].NewestTimestamp.Before(groups[j].NewestTimestamp)
-	})
-
-	return groups, nil
-}
-
-// newestCounterTime returns the most recent ModTime of covcounters.* files
-// across the given directories.
-func newestCounterTime(dirs []string) (time.Time, error) {
-	var newest time.Time
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return time.Time{}, fmt.Errorf("covparse: read dir %s: %w", dir, err)
-		}
-		for _, e := range entries {
-			if !strings.HasPrefix(e.Name(), "covcounters.") {
-				continue
-			}
-			info, err := e.Info()
-			if err != nil {
-				return time.Time{}, fmt.Errorf("covparse: stat %s/%s: %w", dir, e.Name(), err)
-			}
-			if info.ModTime().After(newest) {
-				newest = info.ModTime()
-			}
-		}
-	}
-	return newest, nil
-}
 
 // FuncCoverage holds per-function coverage data extracted from `go tool covdata func`.
 type FuncCoverage struct {
@@ -158,26 +83,9 @@ func parseCovdataFuncOutput(output string) []FuncCoverage {
 //	Type.Method    → (Type).Method
 func NormalizeCovdataFuncName(name string) string {
 	dotIdx := strings.LastIndex(name, ".")
-	if dotIdx < 0 {
+	if dotIdx <= 0 {
 		// plain function, no receiver
 		return name
 	}
-
-	typePart := name[:dotIdx]
-	method := name[dotIdx+1:]
-
-	// If typePart is empty (shouldn't happen), return as-is
-	if typePart == "" {
-		return name
-	}
-
-	// Check for pointer receiver
-	if strings.HasPrefix(typePart, "*") {
-		return "(" + typePart + ")." + method
-	}
-
-	// Value receiver — but only if typePart looks like a type name (starts uppercase)
-	// Plain package-level functions don't have a dot in covdata func output,
-	// but methods always have Type.Method format.
-	return "(" + typePart + ")." + method
+	return "(" + name[:dotIdx] + ")." + name[dotIdx+1:]
 }
