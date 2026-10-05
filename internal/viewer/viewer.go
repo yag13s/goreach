@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -172,38 +173,39 @@ func markLines(lines map[string]map[int]bool, fileName string, blocks []report.U
 	}
 }
 
-// resolveSourcePath converts a report file_name (import path form) to an
-// absolute path under srcDir, validating that it stays within the source root.
-func resolveSourcePath(fileName, modulePath, srcDir string) (string, error) {
-	rel := strings.TrimPrefix(fileName, modulePath)
+// sourceRelPath converts a report file_name (import path form) to a
+// slash-separated path relative to the module root.
+func sourceRelPath(fileName, modulePath string) (string, error) {
+	rel, ok := strings.CutPrefix(fileName, modulePath)
 	rel = strings.TrimPrefix(rel, "/")
-	if rel == "" || rel == fileName {
+	if !ok || rel == "" {
 		return "", fmt.Errorf("file %q does not belong to module %q", fileName, modulePath)
 	}
-
-	joined := filepath.Join(srcDir, filepath.FromSlash(rel))
-	resolved, err := filepath.EvalSymlinks(joined)
-	if err != nil {
-		return "", fmt.Errorf("resolve path: %w", err)
-	}
-
-	absSrc, err := filepath.EvalSymlinks(srcDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve srcDir: %w", err)
-	}
-
-	if !strings.HasPrefix(resolved, absSrc+string(filepath.Separator)) && resolved != absSrc {
-		return "", fmt.Errorf("path %q is outside source root", fileName)
-	}
-	return resolved, nil
+	return rel, nil
 }
 
-// readLines reads all lines from a file.
-func readLines(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
+// readSourceLines reads the lines of the module-relative file rel under
+// srcDir. errNotServable wraps the error if rel cannot be resolved to a file
+// inside srcDir.
+//
+// The file is opened through an [os.Root], which refuses any path that would
+// leave srcDir, whether by ".." or through a symbolic link.
+func readSourceLines(srcDir, rel string) ([]string, error) {
+	root, err := os.OpenRoot(srcDir)
 	if err != nil {
 		return nil, err
 	}
+	defer root.Close()
+
+	name := filepath.FromSlash(rel)
+	if _, err := root.Stat(name); err != nil {
+		return nil, fmt.Errorf("%w: %w", errNotServable, err)
+	}
+	data, err := root.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+
 	lines := strings.Split(string(data), "\n")
 	// Remove trailing empty line from final newline
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
@@ -211,6 +213,10 @@ func readLines(path string) ([]string, error) {
 	}
 	return lines, nil
 }
+
+// errNotServable reports a source path that does not name a file inside the
+// source root.
+var errNotServable = errors.New("resolve path")
 
 type capabilitiesResponse struct {
 	SourcePreview bool `json:"source_preview"`
@@ -262,13 +268,17 @@ func makeSourceHandler(modulePath, srcDir string, whitelist map[string]bool, unr
 			return
 		}
 
-		resolved, err := resolveSourcePath(fileName, modulePath, srcDir)
+		rel, err := sourceRelPath(fileName, modulePath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		lines, err := readLines(resolved)
+		lines, err := readSourceLines(srcDir, rel)
+		if errors.Is(err, errNotServable) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		if err != nil {
 			http.Error(w, "read source file: "+err.Error(), http.StatusInternalServerError)
 			return
