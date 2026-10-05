@@ -56,7 +56,7 @@ func runAnalyze(args []string) error {
 
 	switch {
 	case *recursive:
-		groups, parseErr := covparse.ParseDirRecursiveGrouped(*coverDir)
+		groups, parseErr := covparse.FindBuildGroups(*coverDir)
 		if parseErr != nil {
 			return parseErr
 		}

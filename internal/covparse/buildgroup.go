@@ -25,10 +25,10 @@ func (g BuildGroup) Profiles() ([]*cover.Profile, error) {
 	return mergeAndParse(g.Dirs)
 }
 
-// ParseDirRecursiveGrouped walks dir recursively, groups coverage directories
-// by covmeta hash, and returns BuildGroups sorted by newest covcounters
-// timestamp ascending (last element = newest build).
-func ParseDirRecursiveGrouped(dir string) ([]BuildGroup, error) {
+// FindBuildGroups walks dir recursively, groups coverage directories by
+// covmeta hash, and returns BuildGroups sorted by newest covcounters timestamp
+// ascending (last element = newest build).
+func FindBuildGroups(dir string) ([]BuildGroup, error) {
 	covDirs, err := findCoverageDirs(dir)
 	if err != nil {
 		return nil, err

@@ -235,7 +235,7 @@ func TestNewestCounterTime_NoCovCounters(t *testing.T) {
 	}
 }
 
-func TestParseDirRecursiveGrouped_Ordering(t *testing.T) {
+func TestFindBuildGroups_Ordering(t *testing.T) {
 	root := t.TempDir()
 
 	// Build A (older) and Build B (newer) with different covmeta hashes
@@ -273,7 +273,7 @@ func TestParseDirRecursiveGrouped_Ordering(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	groups, err := ParseDirRecursiveGrouped(root)
+	groups, err := FindBuildGroups(root)
 	if err != nil {
 		t.Fatal(err)
 	}

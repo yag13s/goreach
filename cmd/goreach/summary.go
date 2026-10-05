@@ -32,7 +32,7 @@ func runSummary(args []string) error {
 	case *recursive:
 		// Use only the newest build group's profile for summary.
 		var groups []covparse.BuildGroup
-		groups, err = covparse.ParseDirRecursiveGrouped(*coverDir)
+		groups, err = covparse.FindBuildGroups(*coverDir)
 		if err == nil && len(groups) > 0 {
 			profiles, err = groups[len(groups)-1].Profiles()
 		}
