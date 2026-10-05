@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yag13s/goreach/internal/report"
 )
 
 func TestHandleIndex(t *testing.T) {
@@ -114,6 +116,16 @@ func TestReadModulePath(t *testing.T) {
 	})
 }
 
+// decodeReport decodes report JSON the way Serve does.
+func decodeReport(t *testing.T, data []byte) *report.Report {
+	t.Helper()
+	var rpt report.Report
+	if err := json.Unmarshal(data, &rpt); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	return &rpt
+}
+
 func TestBuildSourceMaps(t *testing.T) {
 	data := []byte(`{
 		"packages": [
@@ -130,7 +142,7 @@ func TestBuildSourceMaps(t *testing.T) {
 			}
 		]
 	}`)
-	wl, unreached, latest := buildSourceMaps(data)
+	wl, unreached, latest := buildSourceMaps(decodeReport(t, data))
 	if len(wl) != 3 {
 		t.Fatalf("whitelist len = %d, want 3", len(wl))
 	}
@@ -200,7 +212,7 @@ func TestMakeSourceHandler_Success(t *testing.T) {
 		}]
 	}`)
 
-	whitelist, unreachedMap, latestUnreachedMap := buildSourceMaps(reportData)
+	whitelist, unreachedMap, latestUnreachedMap := buildSourceMaps(decodeReport(t, reportData))
 	handler := makeSourceHandler("github.com/ex/proj", srcDir, whitelist, unreachedMap, latestUnreachedMap)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/source?file=github.com/ex/proj/internal/foo.go&start=4&end=5", nil)
@@ -296,7 +308,7 @@ func TestBuildSourceMaps_LatestUnreached(t *testing.T) {
 		}]
 	}`)
 
-	_, _, latest := buildSourceMaps(data)
+	_, _, latest := buildSourceMaps(decodeReport(t, data))
 	if latest == nil {
 		t.Fatal("expected non-nil latest map")
 	}
@@ -331,7 +343,7 @@ func TestBuildSourceMaps_NoLatest(t *testing.T) {
 		}]
 	}`)
 
-	_, _, latest := buildSourceMaps(data)
+	_, _, latest := buildSourceMaps(decodeReport(t, data))
 	if len(latest) != 0 {
 		t.Errorf("expected empty latest map, got %d entries", len(latest))
 	}
@@ -354,7 +366,7 @@ func TestMakeSourceHandler_LatestUnreached(t *testing.T) {
 		}]
 	}`)
 
-	wl, um, lum := buildSourceMaps(reportData)
+	wl, um, lum := buildSourceMaps(decodeReport(t, reportData))
 	handler := makeSourceHandler("github.com/ex/proj", srcDir, wl, um, lum)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/source?file=github.com/ex/proj/internal/foo.go&start=4&end=7", nil)

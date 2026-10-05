@@ -5,8 +5,17 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"slices"
 	"time"
 )
+
+// SchemaVersion is the value of [Report.Version] written by this package.
+const SchemaVersion = 1
+
+// ModeMerged is the [Report.Mode] of a report produced by merging several
+// reports. Reports produced directly from coverage data carry the coverage
+// mode of the profile instead ("set", "count" or "atomic").
+const ModeMerged = "merged"
 
 // Report is the top-level JSON output of goreach analyze.
 type Report struct {
@@ -78,6 +87,43 @@ func (r *Report) Write(w io.Writer, pretty bool) error {
 		enc.SetIndent("", "  ")
 	}
 	return enc.Encode(r)
+}
+
+// Clone returns a deep copy of the report.
+//
+// Nil package, file and function lists come back empty rather than nil, so a
+// clone always encodes them as [] and never as null.
+func (r *Report) Clone() *Report {
+	c := *r
+	c.Packages = cloneList(r.Packages)
+	for i := range c.Packages {
+		pkg := &c.Packages[i]
+		pkg.Files = cloneList(pkg.Files)
+		for j := range pkg.Files {
+			file := &pkg.Files[j]
+			file.Functions = cloneList(file.Functions)
+			for k := range file.Functions {
+				fn := &file.Functions[k]
+				fn.UnreachedBlocks = slices.Clone(fn.UnreachedBlocks)
+				fn.LatestUnreachedBlocks = slices.Clone(fn.LatestUnreachedBlocks)
+			}
+		}
+	}
+	return &c
+}
+
+// cloneList copies s into a new, non-nil slice.
+func cloneList[T any](s []T) []T {
+	return append(make([]T, 0, len(s)), s...)
+}
+
+// NewCoverageStats returns the stats for covered out of total statements.
+func NewCoverageStats(covered, total int) CoverageStats {
+	return CoverageStats{
+		TotalStatements:   total,
+		CoveredStatements: covered,
+		CoveragePercent:   ComputePercent(covered, total),
+	}
 }
 
 // ComputePercent calculates coverage percentage, returning 0 for zero total.

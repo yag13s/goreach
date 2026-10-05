@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -172,5 +174,73 @@ func TestReportWrite(t *testing.T) {
 	}
 	if !bytes.Contains(prettyBuf.Bytes(), []byte("  ")) {
 		t.Error("pretty output should contain indentation")
+	}
+}
+
+func TestNewCoverageStats(t *testing.T) {
+	got := NewCoverageStats(3, 4)
+	want := CoverageStats{TotalStatements: 4, CoveredStatements: 3, CoveragePercent: 75}
+	if got != want {
+		t.Errorf("NewCoverageStats(3, 4) = %+v, want %+v", got, want)
+	}
+	if got := NewCoverageStats(0, 0); got != (CoverageStats{}) {
+		t.Errorf("NewCoverageStats(0, 0) = %+v, want zero value", got)
+	}
+}
+
+func TestClone(t *testing.T) {
+	orig := &Report{
+		Version:     SchemaVersion,
+		GeneratedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Mode:        "atomic",
+		Total:       NewCoverageStats(1, 4),
+		Packages: []PackageReport{{
+			ImportPath: "example.com/pkg",
+			Total:      NewCoverageStats(1, 4),
+			Files: []FileReport{{
+				FileName: "example.com/pkg/foo.go",
+				Total:    NewCoverageStats(1, 4),
+				Functions: []FuncReport{{
+					Name: "Foo", Line: 10,
+					TotalStatements: 4, CoveredStatements: 1, CoveragePercent: 25,
+					UnreachedBlocks:       []UnreachedBlock{{StartLine: 11, EndLine: 13, NumStatements: 3}},
+					LatestUnreachedBlocks: []UnreachedBlock{{StartLine: 21, EndLine: 23, NumStatements: 3}},
+				}},
+			}},
+		}},
+	}
+
+	clone := orig.Clone()
+	if !reflect.DeepEqual(orig, clone) {
+		t.Fatalf("clone differs from original:\n got %+v\nwant %+v", clone, orig)
+	}
+
+	// Mutating every level of the clone must leave the original untouched.
+	clone.Mode = ModeMerged
+	clone.Packages[0].ImportPath = "changed"
+	clone.Packages[0].Files[0].FileName = "changed"
+	fn := &clone.Packages[0].Files[0].Functions[0]
+	fn.Name = "changed"
+	fn.UnreachedBlocks[0].StartLine = 99
+	fn.LatestUnreachedBlocks[0].StartLine = 99
+
+	origFn := orig.Packages[0].Files[0].Functions[0]
+	if orig.Mode != "atomic" ||
+		orig.Packages[0].ImportPath != "example.com/pkg" ||
+		orig.Packages[0].Files[0].FileName != "example.com/pkg/foo.go" ||
+		origFn.Name != "Foo" ||
+		origFn.UnreachedBlocks[0].StartLine != 11 ||
+		origFn.LatestUnreachedBlocks[0].StartLine != 21 {
+		t.Errorf("mutating the clone changed the original: %+v", orig)
+	}
+}
+
+func TestClone_EmptyListsEncodeAsArrays(t *testing.T) {
+	var buf bytes.Buffer
+	if err := (&Report{Version: SchemaVersion}).Clone().Write(&buf, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `"packages":[]`) {
+		t.Errorf("expected packages to encode as [], got %s", buf.String())
 	}
 }

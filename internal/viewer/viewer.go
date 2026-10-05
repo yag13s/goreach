@@ -18,6 +18,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/yag13s/goreach/internal/report"
 )
 
 //go:embed index.html
@@ -38,9 +40,11 @@ func Serve(reportPath string, opts Options) error {
 		return fmt.Errorf("read report: %w", err)
 	}
 
-	// Validate JSON
-	if !json.Valid(data) {
-		return fmt.Errorf("invalid JSON in %s", reportPath)
+	// The report is served to the browser byte-for-byte as it was read;
+	// decoding it here validates it and feeds the source preview.
+	var rpt report.Report
+	if err := json.Unmarshal(data, &rpt); err != nil {
+		return fmt.Errorf("invalid report JSON in %s: %w", reportPath, err)
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", opts.Port)
@@ -58,7 +62,7 @@ func Serve(reportPath string, opts Options) error {
 		if err != nil {
 			return fmt.Errorf("read module path: %w", err)
 		}
-		whitelist, unreachedMap, latestUnreachedMap := buildSourceMaps(data)
+		whitelist, unreachedMap, latestUnreachedMap := buildSourceMaps(&rpt)
 		mux.Handle("GET /api/capabilities", makeCapabilitiesHandler(true))
 		mux.Handle("GET /api/source", makeSourceHandler(modulePath, opts.SrcDir, whitelist, unreachedMap, latestUnreachedMap))
 	} else {
@@ -129,30 +133,9 @@ func readModulePath(srcDir string) (string, error) {
 	return "", fmt.Errorf("module directive not found in go.mod")
 }
 
-// buildSourceMaps parses the report JSON once and extracts the file whitelist,
-// unreached line map, and latest unreached line map for source preview.
-func buildSourceMaps(data []byte) (whitelist map[string]bool, unreachedMap, latestUnreachedMap map[string]map[int]bool) {
-	var rpt struct {
-		Packages []struct {
-			Files []struct {
-				FileName  string `json:"file_name"`
-				Functions []struct {
-					UnreachedBlocks []struct {
-						StartLine int `json:"start_line"`
-						EndLine   int `json:"end_line"`
-					} `json:"unreached_blocks"`
-					LatestUnreachedBlocks []struct {
-						StartLine int `json:"start_line"`
-						EndLine   int `json:"end_line"`
-					} `json:"latest_unreached_blocks"`
-				} `json:"functions"`
-			} `json:"files"`
-		} `json:"packages"`
-	}
-	if err := json.Unmarshal(data, &rpt); err != nil {
-		return nil, nil, nil
-	}
-
+// buildSourceMaps extracts the file whitelist, unreached line map, and latest
+// unreached line map for source preview from the report.
+func buildSourceMaps(rpt *report.Report) (whitelist map[string]bool, unreachedMap, latestUnreachedMap map[string]map[int]bool) {
 	whitelist = make(map[string]bool)
 	unreachedMap = make(map[string]map[int]bool)
 	latestUnreachedMap = make(map[string]map[int]bool)
@@ -165,28 +148,28 @@ func buildSourceMaps(data []byte) (whitelist map[string]bool, unreachedMap, late
 			for _, fn := range f.Functions {
 				// Unreached blocks (skip when latest exists — old-build line numbers don't map to current source)
 				if len(fn.LatestUnreachedBlocks) == 0 {
-					for _, b := range fn.UnreachedBlocks {
-						if unreachedMap[f.FileName] == nil {
-							unreachedMap[f.FileName] = make(map[int]bool)
-						}
-						for l := b.StartLine; l <= b.EndLine; l++ {
-							unreachedMap[f.FileName][l] = true
-						}
-					}
+					markLines(unreachedMap, f.FileName, fn.UnreachedBlocks)
 				}
-				// Latest unreached blocks
-				for _, b := range fn.LatestUnreachedBlocks {
-					if latestUnreachedMap[f.FileName] == nil {
-						latestUnreachedMap[f.FileName] = make(map[int]bool)
-					}
-					for l := b.StartLine; l <= b.EndLine; l++ {
-						latestUnreachedMap[f.FileName][l] = true
-					}
-				}
+				markLines(latestUnreachedMap, f.FileName, fn.LatestUnreachedBlocks)
 			}
 		}
 	}
 	return whitelist, unreachedMap, latestUnreachedMap
+}
+
+// markLines records every line spanned by blocks in lines[fileName].
+func markLines(lines map[string]map[int]bool, fileName string, blocks []report.UnreachedBlock) {
+	if len(blocks) == 0 {
+		return
+	}
+	if lines[fileName] == nil {
+		lines[fileName] = make(map[int]bool)
+	}
+	for _, b := range blocks {
+		for l := b.StartLine; l <= b.EndLine; l++ {
+			lines[fileName][l] = true
+		}
+	}
 }
 
 // resolveSourcePath converts a report file_name (import path form) to an
