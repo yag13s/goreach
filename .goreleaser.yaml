@@ -25,6 +25,11 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+release:
+  # Let a failed release be re-run: without this, the second attempt stops at
+  # the first asset that the failed attempt already uploaded.
+  replace_existing_artifacts: true
+
 homebrew_casks:
   - name: goreach
     repository:
