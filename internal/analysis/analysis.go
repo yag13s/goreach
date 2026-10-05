@@ -2,6 +2,7 @@
 package analysis
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -36,21 +37,21 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	// Group profiles by package (directory)
 	pkgFiles := groupByPackage(profiles)
 
-	// Resolve package import paths to disk paths
-	pkgPaths, err := resolvePackages(pkgFiles)
-	if err != nil {
-		return nil, err
-	}
-
-	var pkgReports []report.PackageReport
-	var totalStmts, totalCovered int
-
 	// Sort package import paths for deterministic output
 	importPaths := make([]string, 0, len(pkgFiles))
 	for ip := range pkgFiles {
 		importPaths = append(importPaths, ip)
 	}
 	sort.Strings(importPaths)
+
+	// Resolve package import paths to disk paths
+	pkgPaths, err := resolvePackages(importPaths)
+	if err != nil {
+		return nil, err
+	}
+
+	var pkgReports []report.PackageReport
+	var totalStmts, totalCovered int
 
 	for _, importPath := range importPaths {
 		profs := pkgFiles[importPath]
@@ -60,6 +61,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 
 		diskDir, ok := pkgPaths[importPath]
 		if !ok {
+			fmt.Fprintf(os.Stderr, "goreach: warning: package %s not found by go list, skipping\n", importPath)
 			continue
 		}
 
@@ -157,24 +159,15 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent, opts Options) 
 			continue
 		}
 
-		pct := report.ComputePercent(coveredStmts, totalStmts)
-		unreachedStmts := totalStmts - coveredStmts
-
-		// Apply filters
-		if pct > opts.Threshold {
-			// Still count towards file totals
-			fileStmts += totalStmts
-			fileCovered += coveredStmts
-			continue
-		}
-		if unreachedStmts < opts.MinStatements {
-			fileStmts += totalStmts
-			fileCovered += coveredStmts
-			continue
-		}
-
+		// Every function counts towards the file totals, whether or not
+		// the filters below keep it in the report.
 		fileStmts += totalStmts
 		fileCovered += coveredStmts
+
+		pct := report.ComputePercent(coveredStmts, totalStmts)
+		if pct > opts.Threshold || totalStmts-coveredStmts < opts.MinStatements {
+			continue
+		}
 
 		funcReports = append(funcReports, report.FuncReport{
 			Name:              fn.Name,
@@ -234,25 +227,22 @@ func packageFromFile(filename string) string {
 }
 
 // resolvePackages uses `go list -json` to map import paths to disk directories.
-func resolvePackages(pkgFiles map[string][]*cover.Profile) (map[string]string, error) {
-	importPaths := make([]string, 0, len(pkgFiles))
-	for ip := range pkgFiles {
-		importPaths = append(importPaths, ip)
-	}
-
+func resolvePackages(importPaths []string) (map[string]string, error) {
 	if len(importPaths) == 0 {
 		return nil, nil
 	}
 
 	args := append([]string{"list", "-json"}, importPaths...)
 	cmd := exec.Command("go", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("analysis: go list: %w", err)
+		return nil, fmt.Errorf("analysis: go list: %w\n%s", err, bytes.TrimSpace(stderr.Bytes()))
 	}
 
 	result := make(map[string]string)
-	dec := json.NewDecoder(strings.NewReader(string(out)))
+	dec := json.NewDecoder(bytes.NewReader(out))
 	for dec.More() {
 		var pkg struct {
 			ImportPath string `json:"ImportPath"`
