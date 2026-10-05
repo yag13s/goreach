@@ -36,9 +36,8 @@ type Config struct {
 }
 
 var (
-	mu      sync.Mutex
-	state   *flushState
-	enabled bool
+	mu    sync.Mutex
+	state *flushState // nil unless enabled
 )
 
 type flushState struct {
@@ -62,7 +61,7 @@ func Enable(cfg Config) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if enabled {
+	if state != nil {
 		return
 	}
 
@@ -80,7 +79,6 @@ func Enable(cfg Config) {
 		doneCh: make(chan struct{}),
 	}
 	state = s
-	enabled = true
 
 	if cfg.Interval > 0 {
 		go s.periodicFlush()
@@ -95,13 +93,11 @@ func Enable(cfg Config) {
 func Stop() error {
 	mu.Lock()
 	s := state
-	if !enabled || s == nil {
-		mu.Unlock()
-		return nil
-	}
-	enabled = false
 	state = nil
 	mu.Unlock()
+	if s == nil {
+		return nil
+	}
 
 	close(s.stopCh)
 	<-s.doneCh
@@ -118,14 +114,10 @@ func Stop() error {
 
 // Emit performs an immediate coverage data flush.
 func Emit() error {
-	mu.Lock()
-	s := state
-	if !enabled || s == nil {
-		mu.Unlock()
+	s := current()
+	if s == nil {
 		return nil
 	}
-	mu.Unlock()
-
 	return s.doFlush()
 }
 
@@ -133,13 +125,10 @@ func Emit() error {
 // When any of the specified signals is received, a flush is performed.
 // Calling HandleSignal again replaces the previous signal handler.
 func HandleSignal(sigs ...os.Signal) {
-	mu.Lock()
-	s := state
-	if !enabled || s == nil {
-		mu.Unlock()
+	s := current()
+	if s == nil {
 		return
 	}
-	mu.Unlock()
 
 	s.sigMu.Lock()
 	defer s.sigMu.Unlock()
@@ -160,9 +149,7 @@ func HandleSignal(sigs ...os.Signal) {
 		for {
 			select {
 			case <-ch:
-				if err := s.doFlush(); err != nil && s.cfg.OnError != nil {
-					s.cfg.OnError(err)
-				}
+				s.flushInBackground()
 			case <-s.stopCh:
 				return
 			case <-sigStop:
@@ -170,6 +157,13 @@ func HandleSignal(sigs ...os.Signal) {
 			}
 		}
 	}()
+}
+
+// current returns the active state, or nil if flushing is not enabled.
+func current() *flushState {
+	mu.Lock()
+	defer mu.Unlock()
+	return state
 }
 
 func (s *flushState) periodicFlush() {
@@ -180,12 +174,18 @@ func (s *flushState) periodicFlush() {
 	for {
 		select {
 		case <-ticker.C:
-			if err := s.doFlush(); err != nil && s.cfg.OnError != nil {
-				s.cfg.OnError(err)
-			}
+			s.flushInBackground()
 		case <-s.stopCh:
 			return
 		}
+	}
+}
+
+// flushInBackground flushes on behalf of a goroutine that has no caller to
+// return an error to, reporting failures through Config.OnError.
+func (s *flushState) flushInBackground() {
+	if err := s.doFlush(); err != nil && s.cfg.OnError != nil {
+		s.cfg.OnError(err)
 	}
 }
 
@@ -223,23 +223,7 @@ func (s *flushState) doFlush() error {
 		return nil
 	}
 
-	hostname, _ := os.Hostname()
-	podName := os.Getenv("POD_NAME")
-	if podName == "" {
-		podName = hostname
-	}
-	if podName == "" {
-		podName = "unknown"
-	}
-	meta := Metadata{
-		Timestamp:    time.Now(),
-		Hostname:     hostname,
-		PodName:      podName,
-		BuildVersion: s.cfg.BuildVersion,
-		ServiceName:  s.cfg.ServiceName,
-	}
-
-	if err := s.cfg.Storage.Store(context.Background(), files, meta); err != nil {
+	if err := s.cfg.Storage.Store(context.Background(), files, newMetadata(s.cfg)); err != nil {
 		return fmt.Errorf("goreach/flush: store: %w", err)
 	}
 
@@ -250,6 +234,25 @@ func (s *flushState) doFlush() error {
 	}
 
 	return nil
+}
+
+// newMetadata describes a flush happening now in this process.
+func newMetadata(cfg Config) Metadata {
+	hostname, _ := os.Hostname()
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		podName = hostname
+	}
+	if podName == "" {
+		podName = "unknown"
+	}
+	return Metadata{
+		Timestamp:    time.Now(),
+		Hostname:     hostname,
+		PodName:      podName,
+		BuildVersion: cfg.BuildVersion,
+		ServiceName:  cfg.ServiceName,
+	}
 }
 
 // coverageAvailable checks if coverage instrumentation is present.

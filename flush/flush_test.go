@@ -43,11 +43,8 @@ func TestEnable_NoCoverage(t *testing.T) {
 	defer Stop()
 
 	// State should remain disabled.
-	mu.Lock()
-	e := enabled
-	mu.Unlock()
-	if e {
-		t.Error("expected enabled=false when coverage is not available")
+	if current() != nil {
+		t.Error("expected flushing to stay disabled when coverage is not available")
 	}
 }
 
