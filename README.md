@@ -87,7 +87,7 @@ bash testdata/sampleserver/run.sh
 |------|-------------|---------|
 | `-profile <file>` | Text coverage profile path | -- |
 | `-coverdir <dir>` | GOCOVERDIR path (exclusive with `-profile`) | -- |
-| `-r` | Recursively search coverdir | `false` |
+| `-r` | Recursively search coverdir; data from several builds is merged (see [Multi-Build Workflow](#multi-build-workflow)) | `false` |
 | `-pkg <prefixes>` | Package filter (comma-separated) | all |
 | `-threshold <float>` | List only functions with coverage <= X% | `100` |
 | `-min-statements <n>` | List only functions with >= N unreached statements | `0` |
@@ -152,14 +152,9 @@ When an older build wins on coverage but lacks unreached block detail (e.g. covd
 
 ## Multi-Build Workflow
 
-When deploying new versions of your service, each build produces different coverage metadata.
-goreach handles this by analyzing each build version separately, then merging the results.
-
-<details>
-<summary><strong>Per-build analyze → merge</strong></summary>
-
-Analyze each build version in its own directory, then merge. Merging takes the maximum
-`coverage_percent` per function across all inputs, so no coverage is lost when you redeploy.
+When you deploy a new version of your service, the new build produces different coverage
+metadata, so its data cannot simply be added to the previous build's. Point `analyze -r` at
+the directory holding all of them and goreach reconciles the builds itself:
 
 ```bash
 # Directory structure after collecting coverage from multiple deploys:
@@ -173,35 +168,44 @@ Analyze each build version in its own directory, then merge. Merging takes the m
 #         ├── covmeta.*
 #         └── covcounters.*
 
-# 1. Analyze each build version separately
-for dir in coverage-data/*/; do
-    version=$(basename "$dir")
-    goreach analyze -coverdir "$dir" -r -pretty -o "reports/$version.json"
-done
+# Run from a checkout of the newest build's source
+goreach analyze -coverdir coverage-data -r -pretty -o report.json
 
-# 2. Merge all per-version reports
+# View in browser (with source preview)
+goreach view -src . report.json
+```
+
+`-r` finds every coverage directory under the root and groups them into builds by their
+`covmeta` hash (the directory names do not matter). The newest build is matched against the
+source on disk and defines the report: its functions, line numbers and statement counts.
+Older builds contribute each function's coverage percentage, matched **by function name**,
+and the report keeps the maximum per function — so no coverage is lost when you redeploy,
+and code that moved within a file between builds is still attributed correctly.
+Functions that no longer exist in the newest build are left out.
+
+When an older build wins for a function, the report has no block-level detail from that
+build; the newest build's unreached blocks are kept in `latest_unreached_blocks`, and the
+viewer offers a toggle between the merged and latest-build views.
+
+<details>
+<summary><strong>Merging reports instead</strong> — <code>goreach merge</code></summary>
+
+`goreach merge` combines reports that already exist, the same way: newest report as the
+base, maximum coverage per function.
+
+```bash
 goreach merge -pretty -o merged-report.json reports/*.json
-
-# 3. View in browser (with source preview)
-goreach view -src . merged-report.json
 ```
 
-Makefile example:
+Use it for reports that were each produced **against the source of their own build** — for
+example, a report generated in CI at every release and archived. Then every input is accurate
+on its own terms and merging loses nothing.
 
-```makefile
-analyze-coverage:
-	@mkdir -p coverage-reports
-	@for dir in coverage-data/*/; do \
-		version=$$(basename "$$dir"); \
-		goreach analyze -coverdir "$$dir" -r -pretty \
-			-o "coverage-reports/$$version.json"; \
-	done
-
-merge-coverage:
-	goreach merge -pretty -o coverage-report.json coverage-reports/*.json
-
-coverage: download-coverage analyze-coverage merge-coverage
-```
+Do not use it as a substitute for `analyze -r` by analyzing each old build's data against
+today's source. `analyze` assigns coverage blocks to functions by line number, so an older
+build's blocks land on whatever occupies those lines now; wherever code has shifted, the
+per-build reports are wrong before they are merged. `analyze -r` avoids this by matching
+older builds by function name.
 
 </details>
 
@@ -441,12 +445,8 @@ chmod +x bootstrap
 # Download from S3
 aws s3 sync s3://my-bucket/goreach/my-lambda/ coverage-data/
 
-# Analyze per build version, then merge
-for dir in coverage-data/*/; do
-    version=$(basename "$dir")
-    goreach analyze -coverdir "$dir" -r -pretty -o "reports/$version.json"
-done
-goreach merge -pretty -o report.json reports/*.json
+# Analyze all build versions at once (see Multi-Build Workflow)
+goreach analyze -coverdir coverage-data -r -pretty -o report.json
 
 # View
 goreach view -src . report.json
