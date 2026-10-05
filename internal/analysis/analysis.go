@@ -79,13 +79,9 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	}
 
 	return &report.Report{
-		Version: 1,
-		Mode:    mode,
-		Total: report.CoverageStats{
-			TotalStatements:   totalStmts,
-			CoveredStatements: totalCovered,
-			CoveragePercent:   report.ComputePercent(totalCovered, totalStmts),
-		},
+		Version:  report.SchemaVersion,
+		Mode:     mode,
+		Total:    report.NewCoverageStats(totalCovered, totalStmts),
 		Packages: pkgReports,
 	}, nil
 }
@@ -126,12 +122,8 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts 
 
 	return &report.PackageReport{
 		ImportPath: importPath,
-		Total: report.CoverageStats{
-			TotalStatements:   pkgStmts,
-			CoveredStatements: pkgCovered,
-			CoveragePercent:   report.ComputePercent(pkgCovered, pkgStmts),
-		},
-		Files: fileReports,
+		Total:      report.NewCoverageStats(pkgCovered, pkgStmts),
+		Files:      fileReports,
 	}
 }
 
@@ -199,11 +191,7 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent, opts Options) 
 	}
 
 	return &report.FileReport{
-		Total: report.CoverageStats{
-			TotalStatements:   fileStmts,
-			CoveredStatements: fileCovered,
-			CoveragePercent:   report.ComputePercent(fileCovered, fileStmts),
-		},
+		Total:     report.NewCoverageStats(fileCovered, fileStmts),
 		Functions: funcReports,
 	}
 }

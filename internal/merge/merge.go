@@ -38,9 +38,9 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 
 	// Single report: pass through with updated metadata.
 	if len(reports) == 1 {
-		r := deepCopy(reports[0])
+		r := reports[0].Clone()
 		r.GeneratedAt = time.Now().UTC()
-		r.Mode = "merged"
+		r.Mode = report.ModeMerged
 		return r, nil
 	}
 
@@ -79,7 +79,7 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 	merged := &report.Report{
 		Version:     base.Version,
 		GeneratedAt: time.Now().UTC(),
-		Mode:        "merged",
+		Mode:        report.ModeMerged,
 		Packages:    make([]report.PackageReport, len(base.Packages)),
 	}
 
@@ -149,73 +149,15 @@ func recomputeStats(r *report.Report) {
 				fileCovered += fn.CoveredStatements
 			}
 
-			r.Packages[i].Files[j].Total = report.CoverageStats{
-				TotalStatements:   fileTotal,
-				CoveredStatements: fileCovered,
-				CoveragePercent:   report.ComputePercent(fileCovered, fileTotal),
-			}
+			r.Packages[i].Files[j].Total = report.NewCoverageStats(fileCovered, fileTotal)
 			pkgTotal += fileTotal
 			pkgCovered += fileCovered
 		}
 
-		r.Packages[i].Total = report.CoverageStats{
-			TotalStatements:   pkgTotal,
-			CoveredStatements: pkgCovered,
-			CoveragePercent:   report.ComputePercent(pkgCovered, pkgTotal),
-		}
+		r.Packages[i].Total = report.NewCoverageStats(pkgCovered, pkgTotal)
 		reportTotal += pkgTotal
 		reportCovered += pkgCovered
 	}
 
-	r.Total = report.CoverageStats{
-		TotalStatements:   reportTotal,
-		CoveredStatements: reportCovered,
-		CoveragePercent:   report.ComputePercent(reportCovered, reportTotal),
-	}
-}
-
-// deepCopy returns a deep copy of the report so the caller can mutate it
-// without affecting the original.
-func deepCopy(src *report.Report) *report.Report {
-	dst := &report.Report{
-		Version:     src.Version,
-		GeneratedAt: src.GeneratedAt,
-		Mode:        src.Mode,
-		Total:       src.Total,
-		Packages:    make([]report.PackageReport, len(src.Packages)),
-	}
-	for i, pkg := range src.Packages {
-		dp := report.PackageReport{
-			ImportPath: pkg.ImportPath,
-			Total:      pkg.Total,
-			Files:      make([]report.FileReport, len(pkg.Files)),
-		}
-		for j, file := range pkg.Files {
-			df := report.FileReport{
-				FileName:  file.FileName,
-				Total:     file.Total,
-				Functions: make([]report.FuncReport, len(file.Functions)),
-			}
-			for k, fn := range file.Functions {
-				df.Functions[k] = report.FuncReport{
-					Name:              fn.Name,
-					Line:              fn.Line,
-					TotalStatements:   fn.TotalStatements,
-					CoveredStatements: fn.CoveredStatements,
-					CoveragePercent:   fn.CoveragePercent,
-				}
-				if len(fn.UnreachedBlocks) > 0 {
-					df.Functions[k].UnreachedBlocks = make([]report.UnreachedBlock, len(fn.UnreachedBlocks))
-					copy(df.Functions[k].UnreachedBlocks, fn.UnreachedBlocks)
-				}
-				if len(fn.LatestUnreachedBlocks) > 0 {
-					df.Functions[k].LatestUnreachedBlocks = make([]report.UnreachedBlock, len(fn.LatestUnreachedBlocks))
-					copy(df.Functions[k].LatestUnreachedBlocks, fn.LatestUnreachedBlocks)
-				}
-			}
-			dp.Files[j] = df
-		}
-		dst.Packages[i] = dp
-	}
-	return dst
+	r.Total = report.NewCoverageStats(reportCovered, reportTotal)
 }
