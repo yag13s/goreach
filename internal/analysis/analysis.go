@@ -22,13 +22,6 @@ type Options struct {
 	// PkgPrefixes filters to only packages matching these import path prefixes.
 	// Empty means include all.
 	PkgPrefixes []string
-
-	// Threshold filters functions with coverage below this percentage.
-	// Default 100 means all functions are included.
-	Threshold float64
-
-	// MinStatements filters functions with at least this many unreached statements.
-	MinStatements int
 }
 
 // Run performs the full analysis pipeline: parse profiles, resolve sources,
@@ -65,7 +58,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 			continue
 		}
 
-		pkgReport := analyzePackage(importPath, diskDir, profs, opts)
+		pkgReport := analyzePackage(importPath, diskDir, profs)
 		if pkgReport == nil {
 			continue
 		}
@@ -88,7 +81,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	}, nil
 }
 
-func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts Options) *report.PackageReport {
+func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *report.PackageReport {
 	var fileReports []report.FileReport
 	var pkgStmts, pkgCovered int
 
@@ -107,7 +100,7 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts 
 			continue
 		}
 
-		fileReport := analyzeFile(prof, funcs, opts)
+		fileReport := analyzeFile(prof, funcs)
 		if fileReport == nil {
 			continue
 		}
@@ -129,10 +122,24 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile, opts 
 	}
 }
 
-func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent, opts Options) *report.FileReport {
-	var funcReports []report.FuncReport
+// analyzeFile attributes the profile's blocks to the file's functions.
+//
+// The file totals are those of the profile: every block counts, including
+// blocks outside any function declaration (such as a function literal in a
+// package-level var), so they can exceed the sum over Functions.
+func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileReport {
 	var fileStmts, fileCovered int
+	for _, block := range prof.Blocks {
+		fileStmts += block.NumStmt
+		if block.Count > 0 {
+			fileCovered += block.NumStmt
+		}
+	}
+	if fileStmts == 0 {
+		return nil
+	}
 
+	funcReports := make([]report.FuncReport, 0, len(funcs))
 	for _, fn := range funcs {
 		var totalStmts, coveredStmts int
 		var unreached []report.UnreachedBlock
@@ -159,28 +166,14 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent, opts Options) 
 			continue
 		}
 
-		// Every function counts towards the file totals, whether or not
-		// the filters below keep it in the report.
-		fileStmts += totalStmts
-		fileCovered += coveredStmts
-
-		pct := report.ComputePercent(coveredStmts, totalStmts)
-		if pct > opts.Threshold || totalStmts-coveredStmts < opts.MinStatements {
-			continue
-		}
-
 		funcReports = append(funcReports, report.FuncReport{
 			Name:              fn.Name,
 			Line:              fn.StartLine,
 			TotalStatements:   totalStmts,
 			CoveredStatements: coveredStmts,
-			CoveragePercent:   pct,
+			CoveragePercent:   report.ComputePercent(coveredStmts, totalStmts),
 			UnreachedBlocks:   unreached,
 		})
-	}
-
-	if fileStmts == 0 {
-		return nil
 	}
 
 	return &report.FileReport{

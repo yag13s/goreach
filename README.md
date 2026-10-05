@@ -89,10 +89,12 @@ bash testdata/sampleserver/run.sh
 | `-coverdir <dir>` | GOCOVERDIR path (exclusive with `-profile`) | -- |
 | `-r` | Recursively search coverdir | `false` |
 | `-pkg <prefixes>` | Package filter (comma-separated) | all |
-| `-threshold <float>` | Show functions with coverage <= X% | `100` |
-| `-min-statements <n>` | Show functions with >= N unreached statements | `0` |
+| `-threshold <float>` | List only functions with coverage <= X% | `100` |
+| `-min-statements <n>` | List only functions with >= N unreached statements | `0` |
 | `-o <file>` | Output file | stdout |
 | `-pretty` | Pretty-print JSON | `false` |
+
+`-threshold` and `-min-statements` only choose which functions are listed. File, package and report totals always cover all the code, so a filtered report shows the same coverage percentages as an unfiltered one. With `-r`, the filters are applied after the builds are merged.
 
 </details>
 
@@ -101,10 +103,14 @@ bash testdata/sampleserver/run.sh
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `-threshold <float>` | List only functions with coverage <= X% | `100` |
+| `-min-statements <n>` | List only functions with >= N unreached statements | `0` |
 | `-o <file>` | Output file | stdout |
 | `-pretty` | Pretty-print JSON | `false` |
 
-Uses the newest report as the structural base. Takes the maximum `coverage_percent` per function across all inputs. Deleted functions (only in older reports) are excluded.
+Uses the newest report as the structural base. Takes the maximum `coverage_percent` per function across all inputs, applied to the newest report's statement counts. Deleted functions (only in older reports) are excluded.
+
+To filter a merged report, pass `-threshold` / `-min-statements` to `merge` and leave them off the per-build `analyze` runs: a function filtered out of an input cannot gain coverage from the other inputs.
 
 When an older build wins on coverage but lacks unreached block detail (e.g. covdata func origin), the latest build's blocks are preserved in `latest_unreached_blocks`. The viewer shows a toggle to switch between merged and latest-build block views.
 

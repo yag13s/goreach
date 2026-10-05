@@ -635,7 +635,7 @@ details[open] > summary::before { transform: rotate(90deg); }
         html += '<details style="margin-left:2rem"><summary><span class="file-name">' + esc(baseName) + '</span>' +
           barHTML(ft.coverage_percent) + '</summary>';
 
-        var funcs = sortByPctAsc(f.functions.map(function(fn) { return {data: fn, coverage_percent: fn.coverage_percent}; }));
+        var funcs = sortByPctAsc((f.functions || []).map(function(fn) { return {data: fn, coverage_percent: fn.coverage_percent}; }));
         funcs.forEach(function(fi2) {
           var fn = fi2.data;
           html += '<div class="func-row">' +

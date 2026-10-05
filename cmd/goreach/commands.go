@@ -15,11 +15,16 @@ func runMerge(args []string) error {
 	fs := flag.NewFlagSet("merge", flag.ExitOnError)
 	outputFile := fs.String("o", "", "output file (default: stdout)")
 	pretty := fs.Bool("pretty", false, "pretty-print JSON output")
+	filterFlags := addFilterFlags(fs)
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	paths := fs.Args()
 	if len(paths) == 0 {
 		return fmt.Errorf("at least one report.json path is required")
+	}
+	filter, err := filterFlags.filter()
+	if err != nil {
+		return err
 	}
 
 	reports := make([]*report.Report, 0, len(paths))
@@ -35,6 +40,7 @@ func runMerge(args []string) error {
 	if err != nil {
 		return err
 	}
+	merged.FilterFunctions(filter)
 
 	return writeReport(merged, *outputFile, *pretty)
 }
