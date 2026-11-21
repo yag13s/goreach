@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yag13s/goreach/internal/report"
 )
@@ -23,9 +25,7 @@ type calledFunc struct {
 func funcsWithCalls(rpt *report.Report, prefixes []string) []calledFunc {
 	var funcs []calledFunc
 	for _, pkg := range rpt.Packages {
-		if len(prefixes) > 0 && !slices.ContainsFunc(prefixes, func(p string) bool {
-			return strings.HasPrefix(pkg.ImportPath, p)
-		}) {
+		if !matchesAny(pkg.ImportPath, prefixes) {
 			continue
 		}
 		for _, file := range pkg.Files {
@@ -39,9 +39,16 @@ func funcsWithCalls(rpt *report.Report, prefixes []string) []calledFunc {
 	return funcs
 }
 
-// printCalls prints the most called functions (if top > 0) and the functions
-// never called (if cold) of a report.
-func printCalls(w io.Writer, rpt *report.Report, prefixes []string, top int, cold bool) error {
+// callsView selects the sections printCalls prints.
+type callsView struct {
+	top   int  // most called functions, if > 0
+	loops int  // calls inside loops that ran most per call of their caller, if > 0
+	cold  bool // functions never called
+}
+
+// printCalls prints the sections of v for a report: its most called
+// functions, calls made inside loops, and functions never called.
+func printCalls(w io.Writer, rpt *report.Report, prefixes []string, v callsView) error {
 	funcs := funcsWithCalls(rpt, prefixes)
 	if len(funcs) == 0 {
 		if len(prefixes) > 0 && len(funcsWithCalls(rpt, nil)) > 0 {
@@ -52,26 +59,59 @@ func printCalls(w io.Writer, rpt *report.Report, prefixes []string, top int, col
 	}
 
 	var b strings.Builder
-	if top > 0 {
+	span := collectionSpan(rpt.Collection)
+	if c := rpt.Collection; c != nil {
+		if first, last := c.FirstWrite.UTC().Format("2006-01-02 15:04"), c.LastWrite.UTC().Format("2006-01-02 15:04"); first == last {
+			fmt.Fprintf(&b, "Collected %s UTC", first)
+		} else {
+			fmt.Fprintf(&b, "Collected %s – %s UTC", first, last)
+		}
+		if span > 0 {
+			fmt.Fprintf(&b, " (%s)", span.Round(time.Minute))
+		}
+		if c.Builds > 1 {
+			fmt.Fprintf(&b, ", %d builds", c.Builds)
+		}
+		b.WriteString("\n\n")
+	}
+
+	sep := func() {
+		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
+			b.WriteString("\n")
+		}
+	}
+
+	if v.top > 0 {
 		called := slices.DeleteFunc(slices.Clone(funcs), func(f calledFunc) bool { return f.calls == 0 })
 		slices.SortStableFunc(called, func(a, b calledFunc) int { return cmp.Compare(b.calls, a.calls) })
-		shown := called[:min(top, len(called))]
+		shown := called[:min(v.top, len(called))]
 
 		heading(&b, fmt.Sprintf("Most Called Functions (top %d of %d called)", len(shown), len(called)))
 		width := 5
 		if len(shown) > 0 {
 			width = max(width, len(groupDigits(shown[0].calls)))
 		}
-		fmt.Fprintf(&b, "  %*s  function\n", width, "calls")
+		if span > 0 {
+			fmt.Fprintf(&b, "  %*s  %8s  function\n", width, "calls", "per hour")
+		} else {
+			fmt.Fprintf(&b, "  %*s  function\n", width, "calls")
+		}
 		for _, f := range shown {
-			fmt.Fprintf(&b, "  %*s  %s:%d  %s\n", width, groupDigits(f.calls), f.file, f.fn.Line, f.fn.Name)
+			if span > 0 {
+				fmt.Fprintf(&b, "  %*s  %8s  %s:%d  %s\n", width, groupDigits(f.calls), perHour(f.calls, span), f.file, f.fn.Line, f.fn.Name)
+			} else {
+				fmt.Fprintf(&b, "  %*s  %s:%d  %s\n", width, groupDigits(f.calls), f.file, f.fn.Line, f.fn.Name)
+			}
 		}
 	}
 
-	if cold {
-		if top > 0 {
-			b.WriteString("\n")
-		}
+	if v.loops > 0 {
+		sep()
+		writeLoopCalls(&b, loopCalls(rpt, prefixes), v.loops)
+	}
+
+	if v.cold {
+		sep()
 		var never []calledFunc
 		stmts := 0
 		for _, f := range funcs {
@@ -91,6 +131,93 @@ func printCalls(w io.Writer, rpt *report.Report, prefixes []string, top int, col
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// collectionSpan returns how long the data was collected over, or 0 if that
+// is unknown or under a minute (too short for a meaningful rate).
+func collectionSpan(c *report.Collection) time.Duration {
+	if c == nil {
+		return 0
+	}
+	if d := c.LastWrite.Sub(c.FirstWrite); d >= time.Minute {
+		return d
+	}
+	return 0
+}
+
+// perHour formats n events over span as a rate per hour.
+func perHour(n int, span time.Duration) string {
+	r := float64(n) / span.Hours()
+	if r >= 10 {
+		return groupDigits(int(math.Round(r)))
+	}
+	return strconv.FormatFloat(r, 'f', 1, 64)
+}
+
+// loopCall is a call made inside a loop and the function making it.
+type loopCall struct {
+	file   string
+	caller string
+	call   report.LoopCall
+}
+
+// loopCalls returns the report's calls made inside loops that repeat (run
+// more than once per call of their caller), the most executed first, limited
+// to packages matching one of prefixes (all if empty).
+func loopCalls(rpt *report.Report, prefixes []string) []loopCall {
+	var calls []loopCall
+	for _, pkg := range rpt.Packages {
+		if !matchesAny(pkg.ImportPath, prefixes) {
+			continue
+		}
+		for _, file := range pkg.Files {
+			for _, fn := range file.Functions {
+				for _, c := range fn.LoopCalls {
+					if c.PerCall() > 1 {
+						calls = append(calls, loopCall{file: file.FileName, caller: fn.Name, call: c})
+					}
+				}
+			}
+		}
+	}
+	slices.SortStableFunc(calls, func(a, b loopCall) int {
+		return cmp.Or(cmp.Compare(b.call.Executions, a.call.Executions), cmp.Compare(b.call.PerCall(), a.call.PerCall()))
+	})
+	return calls
+}
+
+// writeLoopCalls writes the first n of calls.
+func writeLoopCalls(b *strings.Builder, calls []loopCall, n int) {
+	shown := calls[:min(n, len(calls))]
+	heading(b, fmt.Sprintf("Calls Inside Loops (top %d of %d repeating)", len(shown), len(calls)))
+	if len(shown) == 0 {
+		b.WriteString("  (none)\n")
+		return
+	}
+	width := max(len("executions"), len(groupDigits(shown[0].call.Executions)))
+	fmt.Fprintf(b, "  %8s  %*s  call\n", "per call", width, "executions")
+	for _, c := range shown {
+		fmt.Fprintf(b, "  %8s  %*s  %s:%d  %s → %s", strconv.FormatFloat(c.call.PerCall(), 'f', 1, 64),
+			width, groupDigits(c.call.Executions), c.file, c.call.Line, c.caller, c.call.Expr)
+		if c.call.Callee != "" && !strings.HasSuffix(c.call.Callee, "."+c.call.Expr) && c.call.Callee != c.call.Expr {
+			fmt.Fprintf(b, "  [%s]", c.call.Callee)
+		}
+		if c.call.TakesContext {
+			b.WriteString("  (ctx)")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n  per call: how many times the call ran each time its caller ran.\n" +
+		"  (ctx): the call passes a context.Context, so it likely does I/O.\n" +
+		"  A call that does I/O (a database read, an HTTP request) many times per call is a likely N+1.\n")
+}
+
+// matchesAny reports whether importPath has one of prefixes, or prefixes is
+// empty.
+func matchesAny(importPath string, prefixes []string) bool {
+	return len(prefixes) == 0 || slices.ContainsFunc(prefixes, func(p string) bool {
+		return strings.HasPrefix(importPath, p)
+	})
 }
 
 // heading writes title underlined, followed by a blank line.

@@ -67,17 +67,24 @@ func FindBuildGroups(dir string) ([]BuildGroup, error) {
 
 // newestCounterTime returns when the most recent covcounters.* file across
 // the given directories was written.
+func newestCounterTime(dirs []string) (time.Time, error) {
+	_, last, err := CounterTimes(dirs)
+	return last, err
+}
+
+// CounterTimes returns when the earliest and the latest covcounters.* file
+// across the given directories was written. Both are zero if there are no
+// counter files.
 //
 // The runtime names counter files covcounters.<hash>.<pid>.<unixnano>, so the
 // write time is read from the name; copying the data around (cp, aws s3 sync)
 // changes ModTime but not the name. ModTime is the fallback for names that do
 // not follow that pattern.
-func newestCounterTime(dirs []string) (time.Time, error) {
-	var newest time.Time
+func CounterTimes(dirs []string) (first, last time.Time, err error) {
 	for _, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return time.Time{}, fmt.Errorf("covparse: read dir %s: %w", dir, err)
+			return time.Time{}, time.Time{}, fmt.Errorf("covparse: read dir %s: %w", dir, err)
 		}
 		for _, e := range entries {
 			if !strings.HasPrefix(e.Name(), "covcounters.") {
@@ -87,16 +94,19 @@ func newestCounterTime(dirs []string) (time.Time, error) {
 			if !ok {
 				info, err := e.Info()
 				if err != nil {
-					return time.Time{}, fmt.Errorf("covparse: stat %s/%s: %w", dir, e.Name(), err)
+					return time.Time{}, time.Time{}, fmt.Errorf("covparse: stat %s/%s: %w", dir, e.Name(), err)
 				}
 				t = info.ModTime()
 			}
-			if t.After(newest) {
-				newest = t
+			if first.IsZero() || t.Before(first) {
+				first = t
+			}
+			if t.After(last) {
+				last = t
 			}
 		}
 	}
-	return newest, nil
+	return first, last, nil
 }
 
 // counterFileTime extracts the write time from a counter file name of the

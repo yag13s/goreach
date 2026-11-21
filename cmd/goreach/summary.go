@@ -23,8 +23,9 @@ func runSummary(args []string) error {
 	recursive := fs.Bool("r", false, "recursively search -coverdir for coverage data")
 	profilePath := fs.String("profile", "", "path to text coverage profile file")
 	top := fs.Int("top", 0, "list the N most called functions instead of the package summary (needs a report)")
+	loops := fs.Int("loops", 0, "list the N calls made inside loops that ran most, with how often per call of their caller: N+1 candidates (needs a report)")
 	cold := fs.Bool("cold", false, "list the functions that were never called instead of the package summary (needs a report)")
-	pkgFilter := fs.String("pkg", "", "with -top/-cold: package filter (comma-separated import path prefixes)")
+	pkgFilter := fs.String("pkg", "", "with -top/-loops/-cold: package filter (comma-separated import path prefixes)")
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	rptPath, err := reportPathArg(fs, *reportPath)
@@ -34,15 +35,15 @@ func runSummary(args []string) error {
 	if *recursive && *coverDir == "" {
 		return fmt.Errorf("-r requires -coverdir")
 	}
-	if *top < 0 {
-		return fmt.Errorf("-top must be non-negative")
+	if *top < 0 || *loops < 0 {
+		return fmt.Errorf("-top and -loops must be non-negative")
 	}
-	byCalls := *top > 0 || *cold
+	byCalls := *top > 0 || *loops > 0 || *cold
 	if *pkgFilter != "" && !byCalls {
-		return fmt.Errorf("-pkg applies to -top and -cold only")
+		return fmt.Errorf("-pkg applies to -top, -loops and -cold only")
 	}
 	if byCalls && rptPath == "" {
-		return fmt.Errorf("-top and -cold need a report: run `goreach analyze -o report.json` first")
+		return fmt.Errorf("-top, -loops and -cold need a report: run `goreach analyze -o report.json` first")
 	}
 
 	if rptPath != "" {
@@ -58,7 +59,7 @@ func runSummary(args []string) error {
 			if *pkgFilter != "" {
 				prefixes = strings.Split(*pkgFilter, ",")
 			}
-			return printCalls(os.Stdout, rpt, prefixes, *top, *cold)
+			return printCalls(os.Stdout, rpt, prefixes, callsView{top: *top, loops: *loops, cold: *cold})
 		}
 		return printSummary(os.Stdout, summarizeReport(rpt))
 	}

@@ -53,7 +53,7 @@ func runView(args []string) error {
 	reportPath := fs.String("report", "", "path to report.json")
 	port := fs.Int("port", 0, "HTTP port (0 = random available)")
 	noOpen := fs.Bool("no-open", false, "do not auto-open browser")
-	srcDir := fs.String("src", "", "source root directory for code preview")
+	srcDir := fs.String("src", "", "module root directory for the code view (default: the current directory if it has a go.mod)")
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	path, err := reportPathArg(fs, *reportPath)
@@ -65,6 +65,12 @@ func runView(args []string) error {
 	}
 
 	opts := viewer.Options{Port: *port, NoOpen: *noOpen}
+
+	if *srcDir == "" {
+		if _, err := os.Stat("go.mod"); err == nil {
+			*srcDir = "."
+		}
+	}
 
 	if *srcDir != "" {
 		abs, err := filepath.Abs(*srcDir)

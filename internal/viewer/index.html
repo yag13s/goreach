@@ -3,1030 +3,948 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>goreach — Coverage Report</title>
+<title>goreach</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 22V10h3v12zm5 0V14h3v8zm5 0v-5h3v5z' fill='white'/%3E%3C/svg%3E">
 <style>
 :root {
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface2: #334155;
-  --border: #475569;
-  --text: #e2e8f0;
-  --text-dim: #94a3b8;
-  --green: #22c55e;
-  --yellow: #eab308;
-  --red: #ef4444;
-  --blue: #3b82f6;
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f1f1f3;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-2: #52525b;
+  --text-3: #8e8e96;
+  --accent: #4f46e5;
+  --accent-soft: #eef2ff;
+  --good: #16a34a;
+  --good-soft: #dcfce7;
+  --warn: #ca8a04;
+  --warn-soft: #fef9c3;
+  --bad: #dc2626;
+  --bad-soft: #fee2e2;
+  --bad-line: #fdecec;
+  --heat: #f97316;
+  --heat-strong: #c2410c;
+  --code-bg: #ffffff;
+  --syn-kw: #7c3aed;
+  --syn-str: #0f766e;
+  --syn-com: #8e8e96;
+  --syn-num: #b45309;
+  --syn-fn: #2563eb;
+  --syn-type: #0e7490;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 1px 3px rgba(0,0,0,.06);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", Roboto, sans-serif;
+  color-scheme: light;
 }
-html { scroll-behavior: smooth; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0c0f; --surface: #151519; --surface-2: #1d1d23; --border: #27272f; --border-strong: #3a3a44;
+    --text: #ededf0; --text-2: #a8a8b3; --text-3: #6e6e7a;
+    --accent: #818cf8; --accent-soft: #1e1b4b;
+    --good: #4ade80; --good-soft: #052e16; --warn: #facc15; --warn-soft: #2e2604;
+    --bad: #f87171; --bad-soft: #3b0d0d; --bad-line: #2a1214;
+    --heat: #fb923c; --heat-strong: #fdba74; --code-bg: #121216;
+    --syn-kw: #c4b5fd; --syn-str: #5eead4; --syn-com: #6e6e7a; --syn-num: #fcd34d; --syn-fn: #93c5fd; --syn-type: #67e8f9;
+    --shadow: none; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0c0f; --surface: #151519; --surface-2: #1d1d23; --border: #27272f; --border-strong: #3a3a44;
+  --text: #ededf0; --text-2: #a8a8b3; --text-3: #6e6e7a;
+  --accent: #818cf8; --accent-soft: #1e1b4b;
+  --good: #4ade80; --good-soft: #052e16; --warn: #facc15; --warn-soft: #2e2604;
+  --bad: #f87171; --bad-soft: #3b0d0d; --bad-line: #2a1214;
+  --heat: #fb923c; --heat-strong: #fdba74; --code-bg: #121216;
+  --syn-kw: #c4b5fd; --syn-str: #5eead4; --syn-com: #6e6e7a; --syn-num: #fcd34d; --syn-fn: #93c5fd; --syn-type: #67e8f9;
+  --shadow: none; color-scheme: dark;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.6;
-  padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-a { color: var(--blue); text-decoration: none; }
-h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
-h2 {
-  font-size: 1.1rem;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.5rem;
-  margin: 2rem 0 1rem;
-}
+html, body { height: 100%; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+input { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.num { font-variant-numeric: tabular-nums; }
+.dim { color: var(--text-2); }
+.faint { color: var(--text-3); }
 
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 2rem;
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 1.5rem 2rem;
-}
-.gauge-container { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
-.gauge-container svg { transform: rotate(-90deg); }
-.gauge-bg { fill: none; stroke: var(--surface2); stroke-width: 8; }
-.gauge-fill { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
-.gauge-text {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.3rem;
-  font-weight: 700;
-}
-.header-meta { color: var(--text-dim); font-size: 0.85rem; }
-.header-meta span { margin-right: 1.5rem; }
+/* ---------- Top bar ---------- */
+.topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--border); }
+.topbar-inner { max-width: 1320px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 24px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; font-size: 15px; }
+.brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
+.tabs { display: flex; gap: 2px; height: 100%; }
+.tab { display: flex; align-items: center; padding: 0 12px; color: var(--text-2); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; gap: 6px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab .count { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-weight: 600; }
+.tab .count.alert { background: var(--bad-soft); color: var(--bad); }
+.spacer { flex: 1; }
+.search { position: relative; width: 300px; }
+.search input { width: 100%; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); padding: 0 32px 0 30px; outline: none; font-size: 13px; }
+.search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.search svg { position: absolute; left: 9px; top: 9px; color: var(--text-3); }
+.search kbd { position: absolute; right: 8px; top: 7px; font: 11px var(--mono); color: var(--text-3); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--surface-2); }
+.search-results { position: absolute; top: 38px; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.12); max-height: 420px; overflow: auto; display: none; padding: 4px; }
+.search-results.open { display: block; }
+.sr-item { display: flex; gap: 10px; align-items: baseline; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.sr-item.sel, .sr-item:hover { background: var(--accent-soft); }
+.sr-item .sr-name { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-item .sr-loc { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+.icon-btn { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--text-2); border: 1px solid var(--border); background: var(--surface); }
+.icon-btn:hover { color: var(--text); }
 
-/* Summary cards */
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  margin: 1.5rem 0;
-}
-.summary-card {
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-  text-align: center;
-  border: 1px solid var(--surface2);
-  transition: border-color 0.2s;
-  cursor: pointer;
-  text-decoration: none;
-  color: inherit;
-  display: block;
-}
-.summary-card:hover { border-color: var(--border); }
-.card-count { font-size: 1.8rem; font-weight: 700; line-height: 1.2; }
-.card-label { font-size: 0.85rem; color: var(--text-dim); margin-top: 0.15rem; }
-.card-detail { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; }
-@media (max-width: 768px) {
-  .summary-cards { grid-template-columns: repeat(2, 1fr); }
-}
+/* ---------- Layout ---------- */
+.page { max-width: 1320px; margin: 0 auto; padding: 28px 24px 64px; }
+.page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.page-head h1 { font-size: 20px; font-weight: 650; letter-spacing: -.015em; }
+.page-head p { color: var(--text-2); font-size: 13px; margin-top: 2px; max-width: 760px; }
+.meta-line { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--text-2); font-size: 12.5px; }
+.meta-line b { color: var(--text); font-weight: 550; }
+.grid { display: grid; gap: 16px; }
+.kpis { grid-template-columns: repeat(5, 1fr); }
+.cols-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } .cols-3 { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, 1fr); } .search { display: none; } .topbar-inner { gap: 12px; padding: 0 16px; } .page { padding: 20px 16px 48px; } }
 
-/* Section divider */
-.section-divider {
-  border-top: 2px solid var(--surface2);
-  padding-top: 0.5rem;
-  margin-top: 2.5rem;
-}
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.card-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+.card-head h2 { font-size: 13.5px; font-weight: 600; }
+.card-head .link { margin-left: auto; font-size: 12.5px; color: var(--accent); font-weight: 500; }
+.card-body { padding: 0 16px 14px; }
+.section { margin-top: 28px; }
+.section-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.section-title h2 { font-size: 15px; font-weight: 620; }
+.section-title p { color: var(--text-2); font-size: 12.5px; }
 
-/* Coverage bar */
-.cov-bar-wrap {
-  background: var(--surface2);
-  border-radius: 4px;
-  height: 8px;
-  flex: 1;
-  min-width: 60px;
-  overflow: hidden;
-}
-.cov-bar {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-.cov-pct { font-size: 0.85rem; min-width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
+.kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; cursor: default; }
+a.kpi { cursor: pointer; }
+a.kpi:hover { border-color: var(--border-strong); }
+.kpi-label { font-size: 12px; color: var(--text-2); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.kpi-value { font-size: 26px; font-weight: 650; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi-sub { font-size: 12px; color: var(--text-3); }
+.t td.r { white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
-/* Tree */
-details { margin-left: 1rem; }
-details > summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 0.35rem 0.5rem;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-details > summary:hover { background: var(--surface); }
-details > summary::before {
-  content: '▸';
-  display: inline-block;
-  width: 1em;
-  transition: transform 0.15s;
-}
-details[open] > summary::before { transform: rotate(90deg); }
-.pkg-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-name { font-weight: 400; flex: 1; }
-.func-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.25rem 0.5rem 0.25rem 2.5rem;
-  font-size: 0.9rem;
-  border-radius: 4px;
-}
-.func-row:hover { background: var(--surface); }
-.func-name { min-width: 180px; }
-.func-line { color: var(--text-dim); font-size: 0.8rem; min-width: 50px; }
-.func-stmts { color: var(--text-dim); font-size: 0.8rem; min-width: 70px; }
-.func-calls { color: var(--text-dim); font-size: 0.8rem; min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
-.func-calls.never { color: var(--red); }
-.calls-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.calls-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--blue); vertical-align: middle; min-width: 2px; }
-.calls-note { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem; }
-.unreached-block {
-  padding: 0.15rem 0.5rem 0.15rem 4rem;
-  font-size: 0.8rem;
-  color: var(--text-dim);
-}
+/* bars */
+.bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; flex: 1; min-width: 40px; }
+.bar > i { display: block; height: 100%; border-radius: 999px; }
+.covcell { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+.covcell .pct { width: 46px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 
-/* Tables */
-.dead-table, .partial-table, .full-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.dead-table th, .partial-table th, .full-table th {
-  text-align: left;
-  color: var(--text-dim);
-  font-weight: 600;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-.dead-table td, .partial-table td, .full-table td {
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid var(--surface2);
-}
-.dead-table tr:hover td, .partial-table tr:hover td, .full-table tr:hover td { background: var(--surface); }
+/* tables */
+.table-wrap { overflow-x: auto; }
+table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+.t th { text-align: left; font-weight: 550; color: var(--text-3); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; user-select: none; }
+.t th.sortable { cursor: pointer; }
+.t th.sortable:hover { color: var(--text-2); }
+.t th.sorted { color: var(--text); }
+.t th.r, .t td.r { text-align: right; }
+.t td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.t tbody tr:last-child td { border-bottom: none; }
+.t tbody tr.click { cursor: pointer; }
+.t tbody tr.click:hover td { background: var(--surface-2); }
+.t tr.group td { background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; padding: 6px 12px; }
+.fn { font-family: var(--mono); font-size: 12.5px; }
+.loc { color: var(--text-3); font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+.compact .t td { padding: 7px 0; }
+.compact .t td + td { padding-left: 12px; }
+.compact .t th { padding: 6px 0; }
+.compact .t th + th { padding-left: 12px; }
 
-.tag-dead {
-  background: rgba(239,68,68,0.15);
-  color: var(--red);
-  padding: 0.1rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.tag-partial {
-  background: rgba(234,179,8,0.15);
-  color: var(--yellow);
-  padding: 0.1rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.tag-full {
-  background: rgba(34,197,94,0.15);
-  color: var(--green);
-  padding: 0.1rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.good { background: var(--good-soft); color: var(--good); }
+.chip.info { background: var(--accent-soft); color: var(--accent); }
+.chip.neutral { background: var(--surface-2); color: var(--text-2); }
+.percall { font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* Group header */
-.group-header td {
-  background: var(--surface);
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--text);
-  padding: 0.5rem 0.75rem;
-  border-left: 3px solid var(--blue);
-}
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { padding: 4px 12px; border-radius: 6px; font-size: 12.5px; color: var(--text-2); font-weight: 500; }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); cursor: pointer; user-select: none; }
+.toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.empty { padding: 28px 16px; text-align: center; color: var(--text-3); font-size: 13px; }
+.note { font-size: 12px; color: var(--text-3); padding: 10px 16px 14px; border-top: 1px solid var(--border); }
+.more { display: block; width: 100%; padding: 9px; color: var(--accent); font-weight: 500; font-size: 12.5px; border-top: 1px solid var(--border); }
+.more:hover { background: var(--surface-2); }
 
-#loading {
-  text-align: center;
-  padding: 4rem;
-  color: var(--text-dim);
-  font-size: 1.1rem;
-}
-#error-msg {
-  background: rgba(239,68,68,0.1);
-  border: 1px solid var(--red);
-  color: var(--red);
-  padding: 1rem;
-  border-radius: 8px;
-  display: none;
-}
+/* ---------- Code view ---------- */
+.code-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+.code-layout > * { min-width: 0; }
+@media (max-width: 900px) { .code-layout { grid-template-columns: 1fr; } .tree { position: static !important; max-height: 320px !important; } }
+.tree { position: sticky; top: 72px; max-height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden; }
+.tree-filter { padding: 10px; border-bottom: 1px solid var(--border); }
+.tree-filter input { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); padding: 0 10px; font-size: 12.5px; outline: none; }
+.tree-filter input:focus { border-color: var(--accent); }
+.tree-list { overflow: auto; padding: 6px; position: relative; }
+.tree-pkg { font-size: 11.5px; color: var(--text-3); font-weight: 600; padding: 8px 8px 3px; font-family: var(--mono); word-break: break-all; }
+.tree-file { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; cursor: pointer; }
+.tree-file:hover { background: var(--surface-2); }
+.tree-file.on { background: var(--accent-soft); color: var(--accent); }
+.tree-file .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-file .p { font-size: 11px; font-variant-numeric: tabular-nums; }
 
-/* Source preview */
-.source-preview {
-  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-  font-size: 0.8rem;
-  background: #0d1117;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin: 0.25rem 0 0.5rem 4rem;
-  padding: 0.5rem 0;
-  overflow-x: auto;
-  line-height: 1.5;
-}
-.source-line {
-  display: flex;
-  padding: 0 0.75rem;
-  white-space: pre;
-}
-.source-line.unreached {
-  background: rgba(239,68,68,0.1);
-}
-.line-num {
-  color: var(--text-dim);
-  min-width: 3.5em;
-  text-align: right;
-  padding-right: 1em;
-  user-select: none;
-  opacity: 0.6;
-}
-.unreached-block.clickable {
-  cursor: pointer;
-}
-.unreached-block.clickable:hover {
-  color: var(--text);
-}
-.expand-icon {
-  display: inline-block;
-  width: 1em;
-  transition: transform 0.15s;
-  margin-right: 0.25rem;
-}
-.expand-icon.open {
-  transform: rotate(90deg);
-}
-.source-loading {
-  padding: 0.5rem 1rem;
-  color: var(--text-dim);
-  margin-left: 4rem;
-  font-size: 0.8rem;
-}
+.file-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.file-head .path { font-family: var(--mono); font-size: 13px; font-weight: 600; word-break: break-all; }
+.outline { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.outline button { font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text-2); display: inline-flex; gap: 6px; align-items: center; }
+.outline button:hover { color: var(--text); border-color: var(--border-strong); }
+.legend { display: flex; gap: 14px; align-items: center; font-size: 11.5px; color: var(--text-3); margin-left: auto; }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.heat-scale { width: 60px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--heat) 8%, transparent), var(--heat)); display: inline-block; vertical-align: 0; margin: 0 4px; }
 
-/* Latest toggle */
-.latest-toggle-wrap {
-  display: none;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 0.6rem 1.25rem;
-  margin-top: 1rem;
-  font-size: 0.85rem;
-}
-.latest-toggle-wrap.visible { display: flex; }
-.toggle-switch {
-  position: relative;
-  width: 40px;
-  height: 22px;
-  flex-shrink: 0;
-}
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--surface2);
-  border-radius: 11px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 3px;
-  bottom: 3px;
-  background: var(--text);
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-.toggle-switch input:checked + .toggle-slider { background: var(--blue); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
-.toggle-label { color: var(--text-dim); }
-.toggle-label.active { color: var(--text); font-weight: 600; }
+.code { background: var(--code-bg); font-family: var(--mono); font-size: 12.5px; line-height: 20px; overflow-x: auto; border-radius: 0 0 12px 12px; }
+.ln { display: grid; grid-template-columns: 56px 64px 1fr; min-width: max-content; }
+.ln > span { white-space: pre; }
+.ln .no { color: var(--text-3); text-align: right; padding-right: 12px; user-select: none; }
+.ln .cnt { text-align: right; padding-right: 10px; user-select: none; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; border-right: 1px solid var(--border); }
+.ln .src { padding-left: 14px; padding-right: 24px; }
+.ln.miss { background: var(--bad-line); }
+.ln.miss .cnt { color: var(--bad); font-weight: 600; }
+.ln.fnstart .src { box-shadow: inset 0 1px 0 var(--border); }
+.ln.target { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 30% { background: color-mix(in srgb, var(--accent) 22%, transparent); } }
+.ann { display: inline-flex; gap: 6px; align-items: center; margin-left: 16px; font-family: var(--sans); font-size: 11px; vertical-align: 1px; }
+.ann .chip { cursor: pointer; }
+.ann-fn { font-family: var(--sans); font-size: 11px; color: var(--text-3); margin-left: 16px; }
+.syn-kw { color: var(--syn-kw); } .syn-str { color: var(--syn-str); } .syn-com { color: var(--syn-com); font-style: italic; }
+.syn-num { color: var(--syn-num); } .syn-fn { color: var(--syn-fn); } .syn-type { color: var(--syn-type); } .syn-builtin { color: var(--syn-type); }
 
-/* Syntax highlighting */
-.syn-kw { color: #ff7b72; }
-.syn-str { color: #a5d6a7; }
-.syn-comment { color: #8b949e; font-style: italic; }
-.syn-num { color: #79c0ff; }
-.syn-type { color: #ffa657; }
-.syn-builtin { color: #d2a8ff; }
-.syn-func { color: #d2a8ff; }
+.blocks-list { padding: 8px 16px 16px; }
+.blk { font-family: var(--mono); font-size: 12px; padding: 4px 0; color: var(--text-2); }
+
+#loading, #error-msg { max-width: 600px; margin: 120px auto; text-align: center; color: var(--text-2); }
+#error-msg { color: var(--bad); display: none; }
+.hidden { display: none !important; }
 </style>
 </head>
 <body>
 <div id="loading">Loading report…</div>
 <div id="error-msg"></div>
-<div id="app" style="display:none">
-  <div class="header" id="header"></div>
-  <div class="latest-toggle-wrap" id="latest-toggle">
-    <span class="toggle-label active" id="toggle-label-merged">Merged (best coverage)</span>
-    <label class="toggle-switch">
-      <input type="checkbox" id="toggle-input">
-      <span class="toggle-slider"></span>
-    </label>
-    <span class="toggle-label" id="toggle-label-latest">Latest build</span>
-  </div>
-  <div id="summary-cards"></div>
-  <h2 id="section-packages">Packages / Files / Functions</h2>
-  <div id="packages"></div>
-  <div id="section-calls" style="display:none">
-    <h2 class="section-divider">Most Called Functions <span id="calls-count" style="color:var(--text-dim);font-weight:400"></span></h2>
-    <div id="most-called"></div>
-  </div>
-  <h2 id="section-dead" class="section-divider">Dead Code Candidates <span id="dead-count" style="color:var(--text-dim);font-weight:400"></span></h2>
-  <div id="dead-code"></div>
-  <h2 id="section-partial" class="section-divider">Partial Coverage <span id="partial-count" style="color:var(--text-dim);font-weight:400"></span></h2>
-  <div id="partial"></div>
-  <h2 id="section-full" class="section-divider">Full Coverage <span id="full-count" style="color:var(--text-dim);font-weight:400"></span></h2>
-  <div id="full-coverage"></div>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/overview">
+        <span class="brand-mark"><svg width="14" height="14" viewBox="0 0 32 32"><path d="M6 26V8h5v18zm8 0V14h5v12zm8 0v-7h5v7z" fill="white"/></svg></span>
+        goreach
+      </a>
+      <nav class="tabs" id="tabs">
+        <a class="tab" data-route="overview" href="#/overview">Overview</a>
+        <a class="tab" data-route="hotspots" href="#/hotspots">Hotspots <span class="count" id="tab-hot-count"></span></a>
+        <a class="tab" data-route="coverage" href="#/coverage">Coverage <span class="count" id="tab-cov-count"></span></a>
+        <a class="tab" data-route="code" href="#/code">Code</a>
+      </nav>
+      <div class="spacer"></div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" type="text" placeholder="Jump to function or file" autocomplete="off" spellcheck="false">
+        <kbd>/</kbd>
+        <div class="search-results" id="search-results"></div>
+      </div>
+      <button class="icon-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+  <main class="page" id="view"></main>
 </div>
 
 <script>
 (function() {
-  'use strict';
+'use strict';
 
-  var showLatestUnreached = false;
-  var hasLatestBlocks = false;
+/* ================= State ================= */
+var R = null;            // the report
+var FUNCS = [];          // every function: {pkg, file, fn, id}
+var FILES = [];          // every file: {pkg, file, data}
+var LOOPS = [];          // loop calls: {pkg, file, caller, fnRef, call}
+var hasCalls = false;    // report has execution counts
+var hasLatest = false;   // some function has latest_unreached_blocks
+var sourceOK = false;
+var prefix = '';         // common path prefix stripped for display
+var spanHours = 0;       // collection span in hours (0 = unknown)
+var srcCache = {};
 
-  function covColor(pct) {
-    if (pct <= 0) return 'var(--red)';
-    if (pct >= 100) return 'var(--green)';
-    var hue = Math.round((pct / 100) * 120);
-    return 'hsl(' + hue + ', 80%, 55%)';
-  }
+var ui = {
+  covMode: 'never',      // coverage tab segment
+  latest: false,         // show latest-build unreached blocks
+  loopsCtxOnly: false,
+  hotLimit: 50,
+  loopLimit: 50,
+  hotSort: 'calls',
+  pkgSort: 'cov',
+  treeFilter: ''
+};
 
-  function fmt(n) { return Number(n).toFixed(1); }
+/* ================= Helpers ================= */
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function fmtInt(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function fmtCompact(n) {
+  if (n < 1000) return String(n);
+  var u = ['k', 'M', 'G', 'T'], i = -1;
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return (n >= 100 ? Math.round(n) : n.toFixed(1).replace(/\.0$/, '')) + u[i];
+}
+function fmtPct(p) { return (Math.round(p * 10) / 10).toFixed(1) + '%'; }
+function fmtRatio(r) { return r >= 100 ? fmtInt(r) : r >= 10 ? r.toFixed(0) : r.toFixed(1); }
+function fmtDuration(ms) {
+  var m = Math.round(ms / 60000);
+  if (m < 60) return m + 'm';
+  var h = Math.floor(m / 60), mm = m % 60;
+  if (h < 48) return h + 'h' + (mm ? ' ' + mm + 'm' : '');
+  return Math.round(h / 24) + 'd';
+}
+function fmtTime(s) {
+  var d = new Date(s);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function covColor(p) {
+  if (p <= 0) return 'var(--bad)';
+  if (p >= 100) return 'var(--good)';
+  if (p < 50) return 'var(--warn)';
+  return 'color-mix(in srgb, var(--good) ' + Math.round((p - 50) * 2) + '%, var(--warn))';
+}
+function covBar(p) {
+  return '<div class="covcell"><div class="bar"><i style="width:' + Math.min(100, p) + '%;background:' + covColor(p) + '"></i></div>' +
+    '<span class="pct" style="color:' + covColor(p) + '">' + fmtPct(p) + '</span></div>';
+}
+function strip(p) { return prefix && p.indexOf(prefix) === 0 ? p.slice(prefix.length) : p; }
+function baseName(p) { var i = p.lastIndexOf('/'); return i >= 0 ? p.slice(i + 1) : p; }
+function dirName(p) { var i = p.lastIndexOf('/'); return i >= 0 ? p.slice(0, i) : ''; }
+function codeHref(file, line) { return '#/code?file=' + encodeURIComponent(file) + (line ? '&line=' + line : ''); }
+function perCall(c) { return c.caller_calls > 0 ? c.executions / c.caller_calls : 0; }
+function perCallChip(r) {
+  var cls = r >= 10 ? 'bad' : r >= 3 ? 'warn' : 'neutral';
+  return '<span class="chip ' + cls + ' percall">×' + fmtRatio(r) + '</span>';
+}
+function rate(n) {
+  if (!spanHours) return '';
+  var r = n / spanHours;
+  return r >= 10 ? fmtInt(r) : r.toFixed(1);
+}
+function unreachedOf(fn) {
+  if (ui.latest) return fn.latest_unreached_blocks || [];
+  return fn.unreached_blocks || [];
+}
+function commonPrefix(paths) {
+  if (!paths.length) return '';
+  var p = paths[0];
+  for (var i = 1; i < paths.length; i++) while (paths[i].indexOf(p) !== 0) p = p.slice(0, -1);
+  var s = p.lastIndexOf('/');
+  return s >= 0 ? p.slice(0, s + 1) : '';
+}
 
-  function barHTML(pct) {
-    return '<div class="cov-bar-wrap"><div class="cov-bar" style="width:' +
-      Math.min(pct, 100) + '%;background:' + covColor(pct) + '"></div></div>' +
-      '<span class="cov-pct" style="color:' + covColor(pct) + '">' + fmt(pct) + '%</span>';
-  }
-
-  function gaugeHTML(pct) {
-    var r = 42, c = 2 * Math.PI * r;
-    var offset = c - (Math.min(pct, 100) / 100) * c;
-    return '<div class="gauge-container">' +
-      '<svg width="100" height="100" viewBox="0 0 100 100">' +
-      '<circle class="gauge-bg" cx="50" cy="50" r="' + r + '"/>' +
-      '<circle class="gauge-fill" cx="50" cy="50" r="' + r + '" ' +
-      'stroke="' + covColor(pct) + '" stroke-dasharray="' + c + '" ' +
-      'stroke-dashoffset="' + offset + '"/></svg>' +
-      '<div class="gauge-text" style="color:' + covColor(pct) + '">' + fmt(pct) + '%</div></div>';
-  }
-
-  // esc escapes s for HTML text and for quoted attribute values.
-  function esc(s) {
-    if (s == null) return '';
-    return String(s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  /* Syntax highlighting for Go source */
-  var goKeywords = {};
-  'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var'.split(' ').forEach(function(w) { goKeywords[w] = 1; });
-  var goTypes = {};
-  'bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr any comparable'.split(' ').forEach(function(w) { goTypes[w] = 1; });
-  var goBuiltins = {};
-  'append cap close complex copy delete imag len make new panic print println real recover nil true false iota'.split(' ').forEach(function(w) { goBuiltins[w] = 1; });
-
-  function escHTML(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  function highlightGo(text) {
-    var out = '';
-    var i = 0;
-    var n = text.length;
-    while (i < n) {
-      var ch = text[i];
-      // Line comment
-      if (ch === '/' && i + 1 < n && text[i + 1] === '/') {
-        out += '<span class="syn-comment">' + escHTML(text.substring(i)) + '</span>';
-        break;
-      }
-      // Block comment
-      if (ch === '/' && i + 1 < n && text[i + 1] === '*') {
-        var ce = text.indexOf('*/', i + 2);
-        if (ce >= 0) {
-          out += '<span class="syn-comment">' + escHTML(text.substring(i, ce + 2)) + '</span>';
-          i = ce + 2; continue;
-        }
-        out += '<span class="syn-comment">' + escHTML(text.substring(i)) + '</span>';
-        break;
-      }
-      // Double-quoted string
-      if (ch === '"') {
-        var j = i + 1;
-        while (j < n && text[j] !== '"') { if (text[j] === '\\') j++; j++; }
-        out += '<span class="syn-str">' + escHTML(text.substring(i, Math.min(j + 1, n))) + '</span>';
-        i = j + 1; continue;
-      }
-      // Backtick string
-      if (ch === '`') {
-        var bt = text.indexOf('`', i + 1);
-        if (bt >= 0) {
-          out += '<span class="syn-str">' + escHTML(text.substring(i, bt + 1)) + '</span>';
-          i = bt + 1;
-        } else {
-          out += '<span class="syn-str">' + escHTML(text.substring(i)) + '</span>';
-          i = n;
-        }
-        continue;
-      }
-      // Rune literal
-      if (ch === "'") {
-        var rm = text.substring(i).match(/^'(?:\\.|[^'\\])'/);
-        if (rm) {
-          out += '<span class="syn-str">' + escHTML(rm[0]) + '</span>';
-          i += rm[0].length; continue;
-        }
-      }
-      // Number
-      if (ch >= '0' && ch <= '9' && (i === 0 || !/[a-zA-Z_]/.test(text[i - 1]))) {
-        var nm = text.substring(i).match(/^(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*\.?[0-9_]*([eE][+-]?[0-9_]+)?i?)/);
-        if (nm) {
-          out += '<span class="syn-num">' + escHTML(nm[0]) + '</span>';
-          i += nm[0].length; continue;
-        }
-      }
-      // Identifier
-      if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_') {
-        var im = text.substring(i).match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
-        if (im) {
-          var w = im[0];
-          var ai = i + w.length;
-          if (goKeywords[w]) {
-            out += '<span class="syn-kw">' + escHTML(w) + '</span>';
-          } else if (goTypes[w]) {
-            out += '<span class="syn-type">' + escHTML(w) + '</span>';
-          } else if (goBuiltins[w]) {
-            out += '<span class="syn-builtin">' + escHTML(w) + '</span>';
-          } else if (ai < n && text[ai] === '(') {
-            out += '<span class="syn-func">' + escHTML(w) + '</span>';
-          } else {
-            out += escHTML(w);
-          }
-          i = ai; continue;
-        }
-      }
-      // Plain character
-      out += escHTML(ch);
-      i++;
+/* ================= Go syntax highlight ================= */
+var KW = {}, TY = {}, BI = {};
+'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var'.split(' ').forEach(function(w) { KW[w] = 1; });
+'bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr any comparable'.split(' ').forEach(function(w) { TY[w] = 1; });
+'append cap clear close complex copy delete imag len make max min new panic print println real recover nil true false iota'.split(' ').forEach(function(w) { BI[w] = 1; });
+function hl(text) {
+  var out = '', i = 0, n = text.length, m;
+  while (i < n) {
+    var ch = text[i], rest = text.slice(i);
+    if (ch === '/' && text[i + 1] === '/') { out += '<span class="syn-com">' + esc(rest) + '</span>'; break; }
+    if (ch === '/' && text[i + 1] === '*') {
+      var e = text.indexOf('*/', i + 2); e = e < 0 ? n : e + 2;
+      out += '<span class="syn-com">' + esc(text.slice(i, e)) + '</span>'; i = e; continue;
     }
-    return out;
-  }
-
-  /* Compute the longest common directory prefix across all file paths */
-  function computeCommonPrefix(pkgs) {
-    var paths = [];
-    (pkgs || []).forEach(function(p) {
-      (p.files || []).forEach(function(f) {
-        paths.push(f.file_name);
-      });
-    });
-    if (paths.length === 0) return '';
-    if (paths.length === 1) {
-      // Return everything up to and including the last '/' before the filename
-      var idx = paths[0].lastIndexOf('/');
-      return idx >= 0 ? paths[0].substring(0, idx + 1) : '';
+    if (ch === '"' || ch === '\'') {
+      var j = i + 1;
+      while (j < n && text[j] !== ch) { if (text[j] === '\\') j++; j++; }
+      out += '<span class="syn-str">' + esc(text.slice(i, j + 1)) + '</span>'; i = j + 1; continue;
     }
-    // Find longest common prefix
-    var prefix = paths[0];
-    for (var i = 1; i < paths.length; i++) {
-      while (paths[i].indexOf(prefix) !== 0) {
-        prefix = prefix.substring(0, prefix.length - 1);
-        if (prefix === '') return '';
-      }
+    if (ch === '`') {
+      var k = text.indexOf('`', i + 1); k = k < 0 ? n : k + 1;
+      out += '<span class="syn-str">' + esc(text.slice(i, k)) + '</span>'; i = k; continue;
     }
-    // Trim to last '/' to avoid partial directory names
-    var slashIdx = prefix.lastIndexOf('/');
-    return slashIdx >= 0 ? prefix.substring(0, slashIdx + 1) : '';
-  }
-
-  var commonPrefix = '';
-
-  function stripPrefix(path) {
-    if (commonPrefix && path.indexOf(commonPrefix) === 0) {
-      return path.substring(commonPrefix.length);
+    if ((m = rest.match(/^(0[xX][0-9a-fA-F_]+|\d[\d_]*(\.\d+)?([eE][+-]?\d+)?)/)) && !/[A-Za-z_]/.test(text[i - 1] || '')) {
+      out += '<span class="syn-num">' + esc(m[0]) + '</span>'; i += m[0].length; continue;
     }
-    return path;
-  }
-
-  /* Extract package directory from a file path (strip filename) */
-  function pkgFromFile(filePath) {
-    var stripped = stripPrefix(filePath);
-    var idx = stripped.lastIndexOf('/');
-    return idx >= 0 ? stripped.substring(0, idx) : stripped;
-  }
-
-  /* Pick which unreached_blocks field to use based on toggle state */
-  function getUnreachedBlocks(fn) {
-    if (showLatestUnreached) {
-      return fn.latest_unreached_blocks || null;
+    if ((m = rest.match(/^[A-Za-z_][A-Za-z0-9_]*/))) {
+      var w = m[0], after = text[i + w.length];
+      if (KW[w]) out += '<span class="syn-kw">' + w + '</span>';
+      else if (TY[w]) out += '<span class="syn-type">' + w + '</span>';
+      else if (BI[w]) out += '<span class="syn-builtin">' + w + '</span>';
+      else if (after === '(') out += '<span class="syn-fn">' + w + '</span>';
+      else out += esc(w);
+      i += w.length; continue;
     }
-    return fn.unreached_blocks;
+    out += esc(ch); i++;
   }
+  return out;
+}
 
-  function renderHeader(rpt) {
-    var t = rpt.total;
-    var pct = t.coverage_percent;
-    var at = rpt.generated_at ? new Date(rpt.generated_at).toLocaleString() : '—';
-    var prefixNote = commonPrefix ? '<span>Prefix: ' + esc(commonPrefix.replace(/\/$/, '')) + '</span>' : '';
-    document.getElementById('header').innerHTML =
-      gaugeHTML(pct) +
-      '<div style="flex:1">' +
-      '<h1>goreach Coverage Report</h1>' +
-      '<div class="header-meta">' +
-      '<span>Statements: ' + t.covered_statements + ' / ' + t.total_statements + '</span>' +
-      '<span>Mode: ' + esc(rpt.mode || '—') + '</span>' +
-      '<span>Generated: ' + esc(at) + '</span>' +
-      prefixNote +
-      '</div></div>';
-  }
-
-  function renderSummaryCards(pkgs) {
-    var funcs = collectFuncs(pkgs);
-    var totalFuncs = funcs.length;
-    var deadFuncs = funcs.filter(function(x) { return x.fn.coverage_percent === 0; });
-    var partialFuncs = funcs.filter(function(x) { return x.fn.coverage_percent > 0 && x.fn.coverage_percent < 100; });
-    var fullFuncs = funcs.filter(function(x) { return x.fn.coverage_percent >= 100; });
-
-    var deadStmts = 0;
-    deadFuncs.forEach(function(x) { deadStmts += x.fn.total_statements; });
-
-    var partialBlocks = 0;
-    partialFuncs.forEach(function(x) {
-      var blocks = getUnreachedBlocks(x.fn);
-      if (blocks) partialBlocks += blocks.length;
-    });
-
-    var el = document.getElementById('summary-cards');
-    el.innerHTML =
-      '<div class="summary-cards">' +
-      '<a href="#section-packages" class="summary-card">' +
-        '<div class="card-count" style="color:var(--blue)">' + totalFuncs + '</div>' +
-        '<div class="card-label">Total Functions</div>' +
-      '</a>' +
-      '<a href="#section-dead" class="summary-card">' +
-        '<div class="card-count" style="color:var(--red)">' + deadFuncs.length + '</div>' +
-        '<div class="card-label">Dead Code</div>' +
-        '<div class="card-detail">' + deadStmts + ' stmts</div>' +
-      '</a>' +
-      '<a href="#section-partial" class="summary-card">' +
-        '<div class="card-count" style="color:var(--yellow)">' + partialFuncs.length + '</div>' +
-        '<div class="card-label">Partial Coverage</div>' +
-        '<div class="card-detail">' + partialBlocks + ' blocks</div>' +
-      '</a>' +
-      '<a href="#section-full" class="summary-card">' +
-        '<div class="card-count" style="color:var(--green)">' + fullFuncs.length + '</div>' +
-        '<div class="card-label">Full Coverage</div>' +
-        '<div class="card-detail">100% covered</div>' +
-      '</a>' +
-      '</div>';
-  }
-
-  function mergeAdjacentBlocks(blocks) {
-    if (!blocks || blocks.length === 0) return [];
-    var sorted = blocks.slice().sort(function(a, b) { return a.start_line - b.start_line; });
-    var merged = [{ start_line: sorted[0].start_line, end_line: sorted[0].end_line, num_statements: sorted[0].num_statements }];
-    for (var i = 1; i < sorted.length; i++) {
-      var prev = merged[merged.length - 1];
-      if (sorted[i].start_line <= prev.end_line + 1) {
-        prev.end_line = Math.max(prev.end_line, sorted[i].end_line);
-        prev.num_statements += sorted[i].num_statements;
-      } else {
-        merged.push({ start_line: sorted[i].start_line, end_line: sorted[i].end_line, num_statements: sorted[i].num_statements });
-      }
-    }
-    return merged;
-  }
-
-  function sortByPctAsc(arr) {
-    return arr.slice().sort(function(a, b) { return a.coverage_percent - b.coverage_percent; });
-  }
-
-  function renderPackages(pkgs) {
-    var el = document.getElementById('packages');
-    if (!pkgs || pkgs.length === 0) { el.innerHTML = '<p style="color:var(--text-dim)">No packages.</p>'; return; }
-
-    var html = '';
-    var sorted = sortByPctAsc(pkgs.map(function(p) { return {data: p, coverage_percent: p.total.coverage_percent}; }));
-
-    sorted.forEach(function(item) {
-      var p = item.data;
-      var pt = p.total;
-      html += '<details><summary><span class="pkg-name">' + esc(stripPrefix(p.import_path)) + '</span>' +
-        barHTML(pt.coverage_percent) + '</summary>';
-
-      var files = sortByPctAsc(p.files.map(function(f) { return {data: f, coverage_percent: f.total.coverage_percent}; }));
-      files.forEach(function(fi) {
-        var f = fi.data;
-        var ft = f.total;
-        var baseName = f.file_name;
-        var si = baseName.lastIndexOf('/');
-        if (si >= 0) baseName = baseName.substring(si + 1);
-        html += '<details style="margin-left:2rem"><summary><span class="file-name">' + esc(baseName) + '</span>' +
-          barHTML(ft.coverage_percent) + '</summary>';
-
-        var funcs = sortByPctAsc((f.functions || []).map(function(fn) { return {data: fn, coverage_percent: fn.coverage_percent}; }));
-        funcs.forEach(function(fi2) {
-          var fn = fi2.data;
-          html += '<div class="func-row">' +
-            '<span class="func-name" style="color:' + covColor(fn.coverage_percent) + '">' + esc(fn.name) + '</span>' +
-            '<span class="func-line">L' + fn.line + '</span>' +
-            barHTML(fn.coverage_percent) +
-            '<span class="func-stmts">' + fn.covered_statements + '/' + fn.total_statements + ' stmts</span>' +
-            callsHTML(fn) + '</div>';
-
-          var blocks = getUnreachedBlocks(fn);
-          if (blocks && blocks.length > 0) {
-            mergeAdjacentBlocks(blocks).forEach(function(b) {
-              if (sourceAvailable) {
-                html += '<div class="unreached-block clickable" data-file="' + esc(f.file_name) +
-                  '" data-start="' + b.start_line + '" data-end="' + b.end_line +
-                  '"><span class="expand-icon">▸</span>L' + b.start_line + '–L' + b.end_line +
-                  ' (' + b.num_statements + ' stmts)</div>';
-              } else {
-                html += '<div class="unreached-block">L' + b.start_line + '–L' + b.end_line +
-                  ' (' + b.num_statements + ' stmts)</div>';
-              }
-            });
-          }
-        });
-        html += '</details>';
-      });
-      html += '</details>';
-    });
-    el.innerHTML = html;
-  }
-
-  function collectFuncs(pkgs) {
-    var all = [];
-    (pkgs || []).forEach(function(p) {
-      (p.files || []).forEach(function(f) {
-        (f.functions || []).forEach(function(fn) {
-          all.push({pkg: p.import_path, file: f.file_name, fn: fn});
+/* ================= Data prep ================= */
+function prepare(rpt) {
+  R = rpt;
+  var paths = [];
+  (rpt.packages || []).forEach(function(p) {
+    (p.files || []).forEach(function(f) {
+      paths.push(f.file_name);
+      FILES.push({ pkg: p.import_path, file: f.file_name, data: f });
+      (f.functions || []).forEach(function(fn) {
+        var ref = { pkg: p.import_path, file: f.file_name, fn: fn };
+        FUNCS.push(ref);
+        if (typeof fn.calls === 'number') hasCalls = true;
+        if (fn.latest_unreached_blocks && fn.latest_unreached_blocks.length) hasLatest = true;
+        (fn.loop_calls || []).forEach(function(c) {
+          LOOPS.push({ pkg: p.import_path, file: f.file_name, caller: fn.name, fnRef: ref, call: c, ratio: perCall(c) });
         });
       });
     });
-    return all;
+  });
+  prefix = paths.length > 1 ? commonPrefix(paths) : (paths[0] ? dirName(paths[0]) + '/' : '');
+  // Keep the module's last path element visible: "github.com/a/app/" → "github.com/a/".
+  if (prefix) {
+    var trimmed = prefix.replace(/\/$/, '');
+    prefix = trimmed.indexOf('/') >= 0 ? trimmed.slice(0, trimmed.lastIndexOf('/') + 1) : '';
   }
+  var c = rpt.collection;
+  if (c) {
+    var ms = new Date(c.last_write) - new Date(c.first_write);
+    if (ms >= 60000) spanHours = ms / 3600000;
+  }
+}
+function repeatingLoops() {
+  return LOOPS.filter(function(l) { return l.ratio > 1 && (!ui.loopsCtxOnly || l.call.takes_context); })
+    .sort(function(a, b) { return b.call.executions - a.call.executions || b.ratio - a.ratio; });
+}
+function findFunc(file, name) {
+  for (var i = 0; i < FUNCS.length; i++) if (FUNCS[i].file === file && FUNCS[i].fn.name === name) return FUNCS[i];
+  return null;
+}
 
-  /* Group functions by package directory, sorted by total statements descending */
-  function groupByPackage(funcs) {
-    var groups = {};
-    funcs.forEach(function(x) {
-      var pkg = pkgFromFile(x.file);
-      if (!groups[pkg]) groups[pkg] = { funcs: [], totalStmts: 0 };
-      groups[pkg].funcs.push(x);
-      groups[pkg].totalStmts += x.fn.total_statements;
+/* ================= Routing ================= */
+function parseRoute() {
+  var h = location.hash.replace(/^#\/?/, '');
+  var q = h.indexOf('?');
+  var name = (q >= 0 ? h.slice(0, q) : h) || 'overview';
+  var params = {};
+  if (q >= 0) h.slice(q + 1).split('&').forEach(function(kv) {
+    var i = kv.indexOf('=');
+    if (i > 0) params[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+  });
+  return { name: name, params: params };
+}
+function render() {
+  var r = parseRoute();
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.toggle('active', t.getAttribute('data-route') === r.name); });
+  var view = document.getElementById('view');
+  var fn = { overview: viewOverview, hotspots: viewHotspots, coverage: viewCoverage, code: viewCode }[r.name] || viewOverview;
+  view.innerHTML = '';
+  fn(view, r.params);
+  if (r.name !== 'code') window.scrollTo(0, 0);
+}
+
+/* ================= Overview ================= */
+function metaLine() {
+  var parts = [];
+  var c = R.collection;
+  if (c) {
+    var a = fmtTime(c.first_write), b = fmtTime(c.last_write);
+    parts.push('Collected <b>' + esc(a === b ? a : a + ' – ' + b) + '</b>' + (spanHours ? ' <span class="faint">(' + fmtDuration(spanHours * 3600000) + ')</span>' : ''));
+    if (c.builds) parts.push('<b>' + c.builds + '</b> build' + (c.builds > 1 ? 's' : ''));
+  }
+  parts.push('Mode <b>' + esc(R.mode || '—') + '</b>');
+  if (R.generated_at) parts.push('Report ' + esc(fmtTime(R.generated_at)));
+  if (prefix) parts.push('<span class="mono faint">' + esc(prefix.replace(/\/$/, '')) + '</span>');
+  return '<div class="meta-line">' + parts.map(function(p) { return '<span>' + p + '</span>'; }).join('') + '</div>';
+}
+
+function viewOverview(el) {
+  var t = R.total;
+  var never = FUNCS.filter(function(x) { return x.fn.coverage_percent === 0; });
+  var neverStmts = never.reduce(function(s, x) { return s + x.fn.total_statements; }, 0);
+  var called = FUNCS.filter(function(x) { return x.fn.calls > 0; });
+  var totalCalls = called.reduce(function(s, x) { return s + x.fn.calls; }, 0);
+  var loops = repeatingLoops();
+  var hot = called.slice().sort(function(a, b) { return b.fn.calls - a.fn.calls; });
+
+  var h = '<div class="page-head"><div><h1>Overview</h1>' + metaLine() + '</div></div>';
+
+  h += '<div class="grid kpis">';
+  h += '<a class="card kpi" href="#/coverage"><div class="kpi-label">Statement coverage</div><div class="kpi-value" style="color:' + covColor(t.coverage_percent) + '">' + fmtPct(t.coverage_percent) + '</div>' +
+    '<div class="kpi-sub">' + fmtInt(t.covered_statements) + ' / ' + fmtInt(t.total_statements) + ' statements</div></a>';
+  h += '<a class="card kpi" href="#/coverage"><div class="kpi-label"><span class="dot" style="background:var(--bad)"></span>Never run</div><div class="kpi-value">' + fmtInt(never.length) + '</div>' +
+    '<div class="kpi-sub">functions · ' + fmtInt(neverStmts) + ' statements</div></a>';
+  if (hasCalls) {
+    h += '<a class="card kpi" href="#/hotspots"><div class="kpi-label"><span class="dot" style="background:var(--heat)"></span>Calls recorded</div><div class="kpi-value">' + fmtCompact(totalCalls) + '</div>' +
+      '<div class="kpi-sub">' + fmtInt(called.length) + ' of ' + fmtInt(FUNCS.length) + ' functions called</div></a>';
+    h += '<a class="card kpi" href="#/hotspots"><div class="kpi-label"><span class="dot" style="background:var(--warn)"></span>Calls inside loops</div><div class="kpi-value">' + fmtInt(loops.length) + '</div>' +
+      '<div class="kpi-sub">repeat per call · possible N+1</div></a>';
+  } else {
+    h += '<div class="card kpi"><div class="kpi-label">Calls recorded</div><div class="kpi-value faint">—</div><div class="kpi-sub">needs -covermode=atomic</div></div>';
+    h += '<div class="card kpi"><div class="kpi-label">Calls inside loops</div><div class="kpi-value faint">—</div><div class="kpi-sub">needs -covermode=atomic</div></div>';
+  }
+  h += '<div class="card kpi"><div class="kpi-label">Code</div><div class="kpi-value">' + fmtInt(FUNCS.length) + '</div>' +
+    '<div class="kpi-sub">functions in ' + fmtInt((R.packages || []).length) + ' packages</div></div>';
+  h += '</div>';
+
+  // Three highlight lists
+  h += '<div class="grid cols-3 section">';
+  h += listCard('Most called', '#/hotspots', hot.slice(0, 6).map(function(x) {
+    return [fnCell(x), '<span class="num">' + fmtCompact(x.fn.calls) + '</span>'];
+  }), hasCalls ? 'No function was called.' : 'The report has no call counts.');
+  h += listCard('Calls inside loops', '#/hotspots', loops.slice(0, 6).map(function(l) {
+    return ['<a href="' + codeHref(l.file, l.call.line) + '"><div class="fn">' + esc(l.call.expr) + '</div><div class="loc">in ' + esc(l.caller) + '</div></a>', perCallChip(l.ratio)];
+  }), hasCalls ? 'No call repeats inside a loop.' : 'The report has no call counts.');
+  var dead = never.slice().sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
+  h += listCard('Largest never-run functions', '#/coverage', dead.slice(0, 6).map(function(x) {
+    return [fnCell(x), '<span class="num dim">' + x.fn.total_statements + ' stmts</span>'];
+  }), 'Every function ran at least once.');
+  h += '</div>';
+
+  // Packages
+  h += '<div class="section"><div class="section-title"><h2>Packages</h2><p>Click a package to browse its code.</p></div>';
+  h += '<div class="card table-wrap" id="pkg-table"></div></div>';
+  el.innerHTML = h;
+  renderPkgTable();
+}
+function fnCell(x) {
+  return '<a href="' + codeHref(x.file, x.fn.line) + '"><div class="fn">' + esc(x.fn.name) + '</div><div class="loc">' + esc(strip(x.file)) + ':' + x.fn.line + '</div></a>';
+}
+function listCard(title, link, rows, emptyMsg) {
+  var h = '<div class="card"><div class="card-head"><h2>' + esc(title) + '</h2><a class="link" href="' + link + '">View all →</a></div>';
+  if (!rows.length) return h + '<div class="empty">' + esc(emptyMsg) + '</div></div>';
+  h += '<div class="card-body compact"><table class="t"><tbody>';
+  rows.forEach(function(r) { h += '<tr><td style="max-width:0;width:100%;overflow:hidden;text-overflow:ellipsis">' + r[0] + '</td><td class="r">' + r[1] + '</td></tr>'; });
+  return h + '</tbody></table></div></div>';
+}
+function renderPkgTable() {
+  var rows = (R.packages || []).map(function(p) {
+    var calls = 0, funcs = 0, never = 0;
+    (p.files || []).forEach(function(f) { (f.functions || []).forEach(function(fn) { funcs++; calls += fn.calls || 0; if (fn.coverage_percent === 0) never++; }); });
+    return { p: p, calls: calls, funcs: funcs, never: never };
+  });
+  var sorts = {
+    name: function(a, b) { return a.p.import_path < b.p.import_path ? -1 : 1; },
+    cov: function(a, b) { return a.p.total.coverage_percent - b.p.total.coverage_percent; },
+    stmts: function(a, b) { return b.p.total.total_statements - a.p.total.total_statements; },
+    calls: function(a, b) { return b.calls - a.calls; },
+    never: function(a, b) { return b.never - a.never; }
+  };
+  rows.sort(sorts[ui.pkgSort]);
+  function th(key, label, cls) { return '<th class="sortable ' + (cls || '') + (ui.pkgSort === key ? ' sorted' : '') + '" data-pkgsort="' + key + '">' + label + '</th>'; }
+  var h = '<table class="t"><thead><tr>' + th('name', 'Package') + th('cov', 'Coverage') + th('stmts', 'Statements', 'r') + th('never', 'Never run', 'r') + (hasCalls ? th('calls', 'Calls', 'r') : '') + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    var first = r.p.files && r.p.files[0];
+    h += '<tr class="click" data-href="' + (first ? codeHref(first.file_name) : '') + '"><td class="fn">' + esc(strip(r.p.import_path) || r.p.import_path) + '</td><td style="width:240px">' + covBar(r.p.total.coverage_percent) + '</td>' +
+      '<td class="r num dim">' + fmtInt(r.p.total.covered_statements) + ' / ' + fmtInt(r.p.total.total_statements) + '</td>' +
+      '<td class="r num">' + (r.never ? r.never : '<span class="faint">0</span>') + '</td>' +
+      (hasCalls ? '<td class="r num">' + fmtCompact(r.calls) + '</td>' : '') + '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('pkg-table').innerHTML = h;
+}
+
+/* ================= Hotspots ================= */
+function viewHotspots(el) {
+  var h = '<div class="page-head"><div><h1>Hotspots</h1><p>Where production time goes: calls that repeat inside loops, and the functions entered most often.</p>' + metaLine() + '</div></div>';
+  if (!hasCalls) {
+    el.innerHTML = h + '<div class="card empty">This report has no execution counts. Build with <span class="mono">-covermode=atomic</span> to record how often code runs.</div>';
+    return;
+  }
+  h += '<div class="section-title"><h2>Calls inside loops</h2><p>Calls that ran more than once per call of the function making them. A database read or HTTP request here is a likely N+1.</p></div>';
+  h += '<div class="toolbar"><label class="check"><input type="checkbox" id="ctx-only"' + (ui.loopsCtxOnly ? ' checked' : '') + '> Only calls passing a context (likely I/O)</label></div>';
+  h += '<div class="card table-wrap" id="loops-table"></div>';
+  h += '<div class="section"><div class="section-title"><h2>Most called functions</h2><p>How many times each function was entered while coverage was collected.</p></div>';
+  h += '<div class="card table-wrap" id="hot-table"></div></div>';
+  el.innerHTML = h;
+  renderLoops();
+  renderHot();
+  document.getElementById('ctx-only').addEventListener('change', function() { ui.loopsCtxOnly = this.checked; renderLoops(); });
+}
+function renderLoops() {
+  var loops = repeatingLoops();
+  var el = document.getElementById('loops-table');
+  if (!loops.length) { el.innerHTML = '<div class="empty">No call repeats inside a loop' + (ui.loopsCtxOnly ? ' among calls passing a context' : '') + '.</div>'; return; }
+  var shown = loops.slice(0, ui.loopLimit);
+  var h = '<table class="t"><thead><tr><th>Call</th><th>Made in</th><th class="r">Per call</th><th class="r">Executions</th><th class="r">Caller calls</th>' + (spanHours ? '<th class="r">Per hour</th>' : '') + '</tr></thead><tbody>';
+  shown.forEach(function(l) {
+    var c = l.call;
+    var callee = c.callee ? '<div class="loc">→ <a href="' + codeHref(c.callee_file, (findFunc(c.callee_file, c.callee) || { fn: {} }).fn.line) + '" style="text-decoration:underline dotted">' + esc(c.callee) + '</a></div>' : '';
+    h += '<tr class="click" data-href="' + codeHref(l.file, c.line) + '">' +
+      '<td><div class="fn">' + esc(c.expr) + (c.takes_context ? ' <span class="chip info" title="passes a context.Context">ctx</span>' : '') + '</div>' + callee + '</td>' +
+      '<td><div class="fn">' + esc(l.caller) + '</div><div class="loc">' + esc(strip(l.file)) + ':' + c.line + '</div></td>' +
+      '<td class="r">' + perCallChip(l.ratio) + '</td>' +
+      '<td class="r num">' + fmtInt(c.executions) + '</td>' +
+      '<td class="r num dim">' + fmtInt(c.caller_calls) + '</td>' +
+      (spanHours ? '<td class="r num dim">' + rate(c.executions) + '</td>' : '') + '</tr>';
+  });
+  h += '</tbody></table>';
+  if (loops.length > shown.length) h += '<button class="more" id="loops-more">Show ' + Math.min(50, loops.length - shown.length) + ' more of ' + (loops.length - shown.length) + '</button>';
+  h += '<div class="note">Per call = executions ÷ caller calls, counted in the newest build. Callees are matched by name; ambiguous ones are left blank.</div>';
+  el.innerHTML = h;
+  var more = document.getElementById('loops-more');
+  if (more) more.addEventListener('click', function() { ui.loopLimit += 50; renderLoops(); });
+}
+function renderHot() {
+  var called = FUNCS.filter(function(x) { return x.fn.calls > 0; });
+  var total = called.reduce(function(s, x) { return s + x.fn.calls; }, 0);
+  var sorts = {
+    calls: function(a, b) { return b.fn.calls - a.fn.calls; },
+    cov: function(a, b) { return a.fn.coverage_percent - b.fn.coverage_percent; },
+    stmts: function(a, b) { return b.fn.total_statements - a.fn.total_statements; }
+  };
+  called.sort(sorts[ui.hotSort]);
+  var el = document.getElementById('hot-table');
+  if (!called.length) { el.innerHTML = '<div class="empty">No function was called.</div>'; return; }
+  var max = called.reduce(function(m, x) { return Math.max(m, x.fn.calls); }, 0);
+  var shown = called.slice(0, ui.hotLimit);
+  function th(key, label, cls) { return '<th class="sortable ' + (cls || '') + (ui.hotSort === key ? ' sorted' : '') + '" data-hotsort="' + key + '">' + label + '</th>'; }
+  var h = '<table class="t"><thead><tr><th style="width:40px">#</th><th>Function</th>' + th('calls', 'Calls', 'r') + (spanHours ? '<th class="r">Per hour</th>' : '') + '<th class="r">Share</th><th style="width:18%"></th>' + th('cov', 'Coverage') + '</tr></thead><tbody>';
+  shown.forEach(function(x, i) {
+    h += '<tr class="click" data-href="' + codeHref(x.file, x.fn.line) + '"><td class="faint num">' + (i + 1) + '</td><td>' + '<div class="fn">' + esc(x.fn.name) + '</div><div class="loc">' + esc(strip(x.file)) + ':' + x.fn.line + '</div></td>' +
+      '<td class="r num">' + fmtInt(x.fn.calls) + '</td>' +
+      (spanHours ? '<td class="r num dim">' + rate(x.fn.calls) + '</td>' : '') +
+      '<td class="r num dim">' + fmtPct(x.fn.calls / total * 100) + '</td>' +
+      '<td><div class="bar"><i style="width:' + Math.max(1, x.fn.calls / max * 100) + '%;background:var(--heat)"></i></div></td>' +
+      '<td style="width:180px">' + covBar(x.fn.coverage_percent) + '</td></tr>';
+  });
+  h += '</tbody></table>';
+  if (called.length > shown.length) h += '<button class="more" id="hot-more">Show ' + Math.min(50, called.length - shown.length) + ' more of ' + (called.length - shown.length) + '</button>';
+  h += '<div class="note">Counts are exact only when counters are cleared after each flush (flush.Config.Clear); otherwise cumulative counters are added up more than once.</div>';
+  el.innerHTML = h;
+  var more = document.getElementById('hot-more');
+  if (more) more.addEventListener('click', function() { ui.hotLimit += 50; renderHot(); });
+}
+
+/* ================= Coverage ================= */
+function viewCoverage(el) {
+  var h = '<div class="page-head"><div><h1>Coverage</h1><p>Code that production never reached. Large never-run functions are the strongest candidates for removal.</p>' + metaLine() + '</div></div>';
+  var never = FUNCS.filter(function(x) { return x.fn.coverage_percent === 0; });
+  var partial = FUNCS.filter(function(x) { return x.fn.coverage_percent > 0 && x.fn.coverage_percent < 100; });
+  var full = FUNCS.filter(function(x) { return x.fn.coverage_percent >= 100; });
+  h += '<div class="toolbar"><div class="seg" id="cov-seg">' +
+    segBtn('never', 'Never run', never.length) + segBtn('partial', 'Partly run', partial.length) + segBtn('full', 'Fully run', full.length) + '</div>';
+  if (hasLatest) {
+    h += '<div class="seg" id="latest-seg"><button data-latest="0" class="' + (!ui.latest ? 'on' : '') + '">Merged (best of all builds)</button><button data-latest="1" class="' + (ui.latest ? 'on' : '') + '">Newest build</button></div>';
+  }
+  h += '</div><div class="card table-wrap" id="cov-table"></div>';
+  el.innerHTML = h;
+  var lists = { never: never, partial: partial, full: full };
+  renderCovTable(lists[ui.covMode]);
+  document.getElementById('cov-seg').addEventListener('click', function(e) {
+    var b = e.target.closest('button'); if (!b) return;
+    ui.covMode = b.getAttribute('data-mode'); render();
+  });
+  var ls = document.getElementById('latest-seg');
+  if (ls) ls.addEventListener('click', function(e) {
+    var b = e.target.closest('button'); if (!b) return;
+    ui.latest = b.getAttribute('data-latest') === '1'; render();
+  });
+}
+function segBtn(mode, label, n) {
+  return '<button data-mode="' + mode + '" class="' + (ui.covMode === mode ? 'on' : '') + '">' + label + ' <span class="faint num">' + fmtInt(n) + '</span></button>';
+}
+function renderCovTable(list) {
+  var el = document.getElementById('cov-table');
+  if (!list.length) { el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+  var groups = {};
+  list.forEach(function(x) {
+    var g = groups[x.pkg] || (groups[x.pkg] = { pkg: x.pkg, items: [], stmts: 0 });
+    g.items.push(x);
+    g.stmts += ui.covMode === 'partial' ? x.fn.total_statements - x.fn.covered_statements : x.fn.total_statements;
+  });
+  var keys = Object.keys(groups).sort(function(a, b) { return groups[b].stmts - groups[a].stmts; });
+  var partial = ui.covMode === 'partial';
+  var h = '<table class="t"><thead><tr><th>Function</th><th>Location</th><th class="r">' + (partial ? 'Unreached' : 'Statements') + '</th>' +
+    (partial ? '<th>Unreached lines</th>' : '') + '<th>Coverage</th>' + (hasCalls ? '<th class="r">Calls</th>' : '') + '</tr></thead><tbody>';
+  var cols = 4 + (partial ? 1 : 0) + (hasCalls ? 1 : 0);
+  keys.forEach(function(k) {
+    var g = groups[k];
+    g.items.sort(function(a, b) {
+      return partial ? (b.fn.total_statements - b.fn.covered_statements) - (a.fn.total_statements - a.fn.covered_statements) : b.fn.total_statements - a.fn.total_statements;
     });
-    // Sort groups by total statements descending
-    var keys = Object.keys(groups);
-    keys.sort(function(a, b) { return groups[b].totalStmts - groups[a].totalStmts; });
-    return keys.map(function(k) { return { pkg: k, funcs: groups[k].funcs, totalStmts: groups[k].totalStmts }; });
-  }
-
-  /* Short location: just filename:line within a package group */
-  function shortLocation(filePath) {
-    var stripped = stripPrefix(filePath);
-    var idx = stripped.lastIndexOf('/');
-    return idx >= 0 ? stripped.substring(idx + 1) : stripped;
-  }
-
-  /* Thousands separators: 1234567 -> 1,234,567 */
-  function fmtCount(n) {
-    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  }
-
-  /* Call count of a function, when the report has one (atomic/count mode). */
-  function callsHTML(fn) {
-    if (typeof fn.calls !== 'number') return '';
-    if (fn.calls === 0) return '<span class="func-calls never">never called</span>';
-    return '<span class="func-calls">' + fmtCount(fn.calls) + ' call' + (fn.calls !== 1 ? 's' : '') + '</span>';
-  }
-
-  var MOST_CALLED_LIMIT = 25;
-
-  function renderMostCalled(pkgs) {
-    var withCalls = collectFuncs(pkgs).filter(function(x) { return typeof x.fn.calls === 'number'; });
-    if (withCalls.length === 0) return; // no execution counts in this report
-
-    var called = withCalls.filter(function(x) { return x.fn.calls > 0; });
-    called.sort(function(a, b) { return b.fn.calls - a.fn.calls; });
-    var shown = called.slice(0, MOST_CALLED_LIMIT);
-
-    document.getElementById('section-calls').style.display = '';
-    document.getElementById('calls-count').textContent =
-      '(top ' + shown.length + ' of ' + called.length + ' called, ' + (withCalls.length - called.length) + ' never called)';
-
-    var el = document.getElementById('most-called');
-    var note = '<p class="calls-note">Calls are how often each function was entered while coverage was collected. ' +
-      'They are exact only if counters are cleared after each flush (flush.Config.Clear).</p>';
-    if (shown.length === 0) {
-      el.innerHTML = note + '<p style="color:var(--text-dim)">No function was called.</p>';
-      return;
-    }
-
-    var max = shown[0].fn.calls;
-    var html = note + '<table class="full-table"><thead><tr>' +
-      '<th>Location</th><th>Function</th><th style="text-align:right">Calls</th><th style="width:30%"></th></tr></thead><tbody>';
-    shown.forEach(function(x) {
-      var w = Math.max(1, Math.round(x.fn.calls / max * 100));
-      html += '<tr><td>' + esc(stripPrefix(x.file)) + ':' + x.fn.line + '</td>' +
-        '<td>' + esc(x.fn.name) + '()</td>' +
-        '<td class="calls-cell">' + fmtCount(x.fn.calls) + '</td>' +
-        '<td><span class="calls-bar" style="width:' + w + '%"></span></td></tr>';
+    h += '<tr class="group"><td colspan="' + cols + '">' + esc(strip(g.pkg) || g.pkg) + ' <span class="faint">· ' + g.items.length + ' functions · ' + fmtInt(g.stmts) + ' statements</span></td></tr>';
+    g.items.forEach(function(x) {
+      var fn = x.fn, blocks = unreachedOf(fn);
+      var firstLine = partial && blocks.length ? blocks[0].start_line : fn.line;
+      h += '<tr class="click" data-href="' + codeHref(x.file, firstLine) + '"><td class="fn">' + esc(fn.name) + '</td><td class="loc">' + esc(baseName(x.file)) + ':' + fn.line + '</td>' +
+        '<td class="r num">' + (partial ? fn.total_statements - fn.covered_statements : fn.total_statements) + '</td>' +
+        (partial ? '<td class="loc">' + mergeRanges(blocks).slice(0, 4).map(function(b) { return b[0] === b[1] ? 'L' + b[0] : 'L' + b[0] + '–' + b[1]; }).join(', ') + (mergeRanges(blocks).length > 4 ? ' …' : '') + '</td>' : '') +
+        '<td style="width:170px">' + covBar(fn.coverage_percent) + '</td>' +
+        (hasCalls ? '<td class="r num dim">' + (typeof fn.calls === 'number' ? fmtInt(fn.calls) : '—') + '</td>' : '') + '</tr>';
     });
-    html += '</tbody></table>';
-    el.innerHTML = html;
+  });
+  el.innerHTML = h + '</tbody></table>';
+}
+function mergeRanges(blocks) {
+  var s = blocks.slice().sort(function(a, b) { return a.start_line - b.start_line; }), out = [];
+  s.forEach(function(b) {
+    var last = out[out.length - 1];
+    if (last && b.start_line <= last[1] + 1) last[1] = Math.max(last[1], b.end_line);
+    else out.push([b.start_line, b.end_line]);
+  });
+  return out;
+}
+
+/* ================= Code ================= */
+function viewCode(el, params) {
+  var file = params.file;
+  if (!file || !FILES.some(function(f) { return f.file === file; })) {
+    // Default: the file with the most calls, else the first.
+    var best = FILES[0];
+    FILES.forEach(function(f) {
+      var c = (f.data.functions || []).reduce(function(s, fn) { return s + (fn.calls || 0); }, 0);
+      if (!best || c > (best._c || 0)) { best = f; best._c = c; }
+    });
+    file = best ? best.file : null;
+  }
+  el.innerHTML = '<div class="code-layout"><aside class="card tree"><div class="tree-filter"><input id="tree-filter" placeholder="Filter files" value="' + esc(ui.treeFilter) + '"></div><div class="tree-list" id="tree-list"></div></aside>' +
+    '<section class="card" id="file-pane"></section></div>';
+  renderTree(file);
+  document.getElementById('tree-filter').addEventListener('input', function() { ui.treeFilter = this.value; renderTree(file); });
+  if (file) renderFile(file, params.line ? parseInt(params.line, 10) : 0);
+  else document.getElementById('file-pane').innerHTML = '<div class="empty">The report lists no files.</div>';
+}
+function renderTree(current) {
+  var q = ui.treeFilter.toLowerCase();
+  var byPkg = {};
+  FILES.forEach(function(f) {
+    if (q && f.file.toLowerCase().indexOf(q) < 0) return;
+    (byPkg[f.pkg] || (byPkg[f.pkg] = [])).push(f);
+  });
+  var h = '';
+  Object.keys(byPkg).sort().forEach(function(pkg) {
+    h += '<div class="tree-pkg">' + esc(strip(pkg) || pkg) + '</div>';
+    byPkg[pkg].sort(function(a, b) { return a.file < b.file ? -1 : 1; }).forEach(function(f) {
+      var p = f.data.total.coverage_percent;
+      h += '<a class="tree-file' + (f.file === current ? ' on' : '') + '" href="' + codeHref(f.file) + '"><span class="nm">' + esc(baseName(f.file)) + '</span><span class="p" style="color:' + covColor(p) + '">' + Math.round(p) + '%</span></a>';
+    });
+  });
+  var list = document.getElementById('tree-list');
+  list.innerHTML = h || '<div class="empty">No matching files.</div>';
+  var on = list.querySelector('.tree-file.on');
+  if (on) list.scrollTop = Math.max(0, on.offsetTop - list.clientHeight / 2);
+}
+function fileFuncs(file) {
+  var f = FILES.filter(function(x) { return x.file === file; })[0];
+  return f ? (f.data.functions || []).slice().sort(function(a, b) { return a.line - b.line; }) : [];
+}
+function renderFile(file, line) {
+  var pane = document.getElementById('file-pane');
+  var f = FILES.filter(function(x) { return x.file === file; })[0];
+  var funcs = fileFuncs(file);
+  var calls = funcs.reduce(function(s, fn) { return s + (fn.calls || 0); }, 0);
+  var hasBlocks = funcs.some(function(fn) { return fn.blocks && fn.blocks.length; });
+
+  var head = '<div class="file-head"><div style="flex:1;min-width:0"><div class="path">' + esc(strip(file)) + '</div>' +
+    '<div class="meta-line" style="margin-top:4px"><span><b>' + funcs.length + '</b> functions</span>' + (hasCalls ? '<span><b>' + fmtCompact(calls) + '</b> calls</span>' : '') + '</div></div>' +
+    '<div style="width:200px">' + covBar(f.data.total.coverage_percent) + '</div></div>';
+  var outline = funcs.length ? '<div class="outline">' + funcs.map(function(fn) {
+    return '<button data-line="' + fn.line + '" title="' + esc(fn.name) + '"><span style="width:6px;height:6px;border-radius:50%;background:' + covColor(fn.coverage_percent) + '"></span>' + esc(fn.name.replace(/^\(.*\)\./, '.')) +
+      (typeof fn.calls === 'number' ? ' <span class="faint">' + fmtCompact(fn.calls) + '</span>' : '') + '</button>';
+  }).join('') + '</div>' : '';
+
+  if (!sourceOK) {
+    var h = head + outline + '<div class="note" style="border-top:none">Source preview is off. Run <span class="mono">goreach view -src &lt;module root&gt;</span> to see execution counts line by line.</div><div class="blocks-list">';
+    funcs.forEach(function(fn) {
+      var b = unreachedOf(fn);
+      h += '<div class="blk" id="L' + fn.line + '"><b class="fn">' + esc(fn.name) + '</b> <span class="faint">L' + fn.line + '</span> ' + covBar(fn.coverage_percent).replace('class="covcell"', 'class="covcell" style="display:inline-flex;width:180px;vertical-align:middle"') +
+        (b.length ? ' <span class="loc">unreached ' + mergeRanges(b).map(function(r) { return 'L' + r[0] + (r[1] !== r[0] ? '–' + r[1] : ''); }).join(', ') + '</span>' : '') + '</div>';
+    });
+    pane.innerHTML = h + '</div>';
+    bindOutline(pane);
+    return;
   }
 
-  function renderDeadCode(pkgs) {
-    var funcs = collectFuncs(pkgs).filter(function(x) { return x.fn.coverage_percent === 0; });
+  var legend = '<div class="legend">' + (hasBlocks ? '<span>runs <span class="heat-scale"></span> more</span>' : '') +
+    '<span><span class="sw" style="background:var(--bad-line);border:1px solid var(--bad-soft)"></span>never ran</span>' +
+    (hasBlocks ? '<span class="faint">counts: newest build</span>' : '') + '</div>';
+  pane.innerHTML = head + outline.replace('</div>', legend + '</div>') + '<div class="code" id="code"><div class="empty">Loading source…</div></div>';
+  if (!outline) pane.querySelector('.file-head').insertAdjacentHTML('afterend', '<div class="outline">' + legend + '</div>');
+  bindOutline(pane);
 
-    document.getElementById('dead-count').textContent = '(' + funcs.length + ')';
-    var el = document.getElementById('dead-code');
-
-    if (funcs.length === 0) {
-      el.innerHTML = '<p style="color:var(--text-dim)">No dead code candidates found.</p>';
-      return;
-    }
-
-    var groups = groupByPackage(funcs);
-
-    var html = '<table class="dead-table"><thead><tr>' +
-      '<th>Location</th><th>Function</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
-
-    groups.forEach(function(g) {
-      // Sort within group by statements descending
-      g.funcs.sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
-
-      html += '<tr class="group-header"><td colspan="4">' +
-        esc(g.pkg || '(root)') + '  (' + g.funcs.length + ' func' + (g.funcs.length !== 1 ? 's' : '') +
-        ', ' + g.totalStmts + ' stmts)</td></tr>';
-
-      g.funcs.forEach(function(x) {
-        html += '<tr><td>' + esc(shortLocation(x.file)) + ':' + x.fn.line + '</td>' +
-          '<td>' + esc(x.fn.name) + '()</td>' +
-          '<td>' + x.fn.total_statements + '</td>' +
-          '<td><span class="tag-dead">0%</span></td></tr>';
-      });
-    });
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  }
-
-  function renderPartial(pkgs) {
-    var rows = [];
-    collectFuncs(pkgs).forEach(function(x) {
-      var fn = x.fn;
-      if (fn.coverage_percent > 0 && fn.coverage_percent < 100) {
-        var blocks = getUnreachedBlocks(fn);
-        if (blocks) {
-          blocks.forEach(function(b) {
-            rows.push({file: x.file, fn: fn, block: b});
-          });
-        }
-      }
-    });
-
-    document.getElementById('partial-count').textContent = '(' + rows.length + ' blocks)';
-    var el = document.getElementById('partial');
-
-    if (rows.length === 0) {
-      el.innerHTML = '<p style="color:var(--text-dim)">No partial coverage blocks found.</p>';
-      return;
-    }
-
-    // Group partial blocks by package
-    var groupMap = {};
-    rows.forEach(function(x) {
-      var pkg = pkgFromFile(x.file);
-      if (!groupMap[pkg]) groupMap[pkg] = { rows: [], totalStmts: 0 };
-      groupMap[pkg].rows.push(x);
-      groupMap[pkg].totalStmts += x.block.num_statements;
-    });
-    var keys = Object.keys(groupMap);
-    keys.sort(function(a, b) { return groupMap[b].totalStmts - groupMap[a].totalStmts; });
-
-    var html = '<table class="partial-table"><thead><tr>' +
-      '<th>Location</th><th>Function</th><th>Lines</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
-
-    keys.forEach(function(pkg) {
-      var g = groupMap[pkg];
-      // Sort within group by statements descending
-      g.rows.sort(function(a, b) { return b.block.num_statements - a.block.num_statements; });
-
-      html += '<tr class="group-header"><td colspan="5">' +
-        esc(pkg || '(root)') + '  (' + g.rows.length + ' block' + (g.rows.length !== 1 ? 's' : '') +
-        ', ' + g.totalStmts + ' stmts)</td></tr>';
-
-      g.rows.forEach(function(x) {
-        html += '<tr><td>' + esc(shortLocation(x.file)) + ':' + x.block.start_line + '</td>' +
-          '<td>' + esc(x.fn.name) + '()</td>' +
-          '<td>L' + x.block.start_line + '–L' + x.block.end_line + '</td>' +
-          '<td>' + x.block.num_statements + '</td>' +
-          '<td><span class="tag-partial">' + fmt(x.fn.coverage_percent) + '%</span></td></tr>';
-      });
-    });
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  }
-
-  function renderFullCoverage(pkgs) {
-    var funcs = collectFuncs(pkgs).filter(function(x) { return x.fn.coverage_percent >= 100; });
-
-    document.getElementById('full-count').textContent = '(' + funcs.length + ')';
-    var el = document.getElementById('full-coverage');
-
-    if (funcs.length === 0) {
-      el.innerHTML = '<p style="color:var(--text-dim)">No fully covered functions found.</p>';
-      return;
-    }
-
-    var groups = groupByPackage(funcs);
-
-    var html = '<table class="full-table"><thead><tr>' +
-      '<th>Location</th><th>Function</th><th>Stmts</th><th>Status</th></tr></thead><tbody>';
-
-    groups.forEach(function(g) {
-      g.funcs.sort(function(a, b) { return b.fn.total_statements - a.fn.total_statements; });
-
-      html += '<tr class="group-header"><td colspan="4">' +
-        esc(g.pkg || '(root)') + '  (' + g.funcs.length + ' func' + (g.funcs.length !== 1 ? 's' : '') +
-        ', ' + g.totalStmts + ' stmts)</td></tr>';
-
-      g.funcs.forEach(function(x) {
-        html += '<tr><td>' + esc(shortLocation(x.file)) + ':' + x.fn.line + '</td>' +
-          '<td>' + esc(x.fn.name) + '()</td>' +
-          '<td>' + x.fn.total_statements + '</td>' +
-          '<td><span class="tag-full">100%</span></td></tr>';
-      });
-    });
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  }
-
-  var sourceAvailable = false;
-
-  Promise.all([
-    fetch('/api/report').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
-    fetch('/api/capabilities').then(function(r) { return r.ok ? r.json() : {source_preview: false}; })
-  ])
-    .then(function(results) {
-      var rpt = results[0];
-      var caps = results[1];
-      sourceAvailable = caps.source_preview === true;
-
-      commonPrefix = computeCommonPrefix(rpt.packages);
-
-      // Detect if any function has latest_unreached_blocks
-      (rpt.packages || []).forEach(function(p) {
-        (p.files || []).forEach(function(f) {
-          (f.functions || []).forEach(function(fn) {
-            if (fn.latest_unreached_blocks && fn.latest_unreached_blocks.length > 0) {
-              hasLatestBlocks = true;
-            }
-          });
-        });
-      });
-
-      // Store packages for re-rendering on toggle
-      window.__goreach_packages = rpt.packages;
-
-      // Show toggle if latest blocks exist
-      if (hasLatestBlocks) {
-        document.getElementById('latest-toggle').classList.add('visible');
-      }
-
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      renderHeader(rpt);
-      renderSummaryCards(rpt.packages);
-      renderPackages(rpt.packages);
-      renderMostCalled(rpt.packages);
-      renderDeadCode(rpt.packages);
-      renderPartial(rpt.packages);
-      renderFullCoverage(rpt.packages);
-    })
-    .catch(function(err) {
-      document.getElementById('loading').style.display = 'none';
-      var el = document.getElementById('error-msg');
-      el.style.display = 'block';
-      el.textContent = 'Failed to load report: ' + err.message;
-    });
-
-  // Toggle event
-  document.getElementById('toggle-input').addEventListener('change', function() {
-    showLatestUnreached = this.checked;
-    var mergedLabel = document.getElementById('toggle-label-merged');
-    var latestLabel = document.getElementById('toggle-label-latest');
-    if (showLatestUnreached) {
-      mergedLabel.classList.remove('active');
-      latestLabel.classList.add('active');
+  loadSource(file).then(function(lines) {
+    var code = document.getElementById('code');
+    if (!code) return;
+    code.innerHTML = renderLines(file, funcs, lines, hasBlocks);
+    if (line) {
+      var t = document.getElementById('L' + line);
+      if (t) { centerOn(t, false); t.classList.add('target'); }
     } else {
-      mergedLabel.classList.add('active');
-      latestLabel.classList.remove('active');
+      window.scrollTo(0, 0);
     }
-
-    // Close all open source previews and clear cached data
-    var previews = document.querySelectorAll('.source-preview');
-    for (var i = 0; i < previews.length; i++) {
-      previews[i].remove();
-    }
-    var blocks = document.querySelectorAll('.unreached-block[data-loaded]');
-    for (var j = 0; j < blocks.length; j++) {
-      blocks[j].removeAttribute('data-loaded');
-      var icon = blocks[j].querySelector('.expand-icon');
-      if (icon) icon.classList.remove('open');
-    }
-
-    // Re-render with stored packages
-    var pkgs = window.__goreach_packages;
-    if (pkgs) {
-      renderSummaryCards(pkgs);
-      renderPackages(pkgs);
-      renderPartial(pkgs);
-    }
+  }).catch(function(err) {
+    var code = document.getElementById('code');
+    if (code) code.innerHTML = '<div class="empty">Could not load the source: ' + esc(err.message) + '</div>';
   });
-
-  function toggleSource(blockEl) {
-    var existing = blockEl.nextElementSibling;
-    if (existing && existing.classList.contains('source-preview')) {
-      existing.remove();
-      blockEl.querySelector('.expand-icon').classList.remove('open');
-      return;
+}
+function bindOutline(pane) {
+  pane.querySelectorAll('.outline button[data-line]').forEach(function(b) {
+    b.addEventListener('click', function() {
+      var t = document.getElementById('L' + b.getAttribute('data-line'));
+      if (!t) return;
+      centerOn(t, true);
+      t.classList.remove('target'); void t.offsetWidth; t.classList.add('target');
+    });
+  });
+}
+// centerOn scrolls the window, and only the window, so el is mid-screen.
+// scrollIntoView would also scroll the code box sideways to a long line.
+function centerOn(el, smooth) {
+  var y = el.getBoundingClientRect().top + window.scrollY - window.innerHeight / 2;
+  window.scrollTo({ top: Math.max(0, y), left: 0, behavior: smooth ? 'smooth' : 'auto' });
+}
+function loadSource(file) {
+  if (srcCache[file]) return Promise.resolve(srcCache[file]);
+  return fetch('/api/source?file=' + encodeURIComponent(file) + '&start=1&end=1000000').then(function(r) {
+    if (!r.ok) return r.text().then(function(t) { throw new Error(t.trim() || 'HTTP ' + r.status); });
+    return r.json();
+  }).then(function(d) { srcCache[file] = d.lines; return d.lines; });
+}
+function renderLines(file, funcs, lines, hasBlocks) {
+  // Per-line execution counts from the blocks: a line runs as often as the
+  // most-run block touching it; a line touched only by blocks that never ran
+  // never ran.
+  var count = {}, touched = {}, max = 0;
+  var fnAt = {}, loopAt = {};
+  funcs.forEach(function(fn) {
+    fnAt[fn.line] = fn;
+    (fn.blocks || []).forEach(function(b) {
+      for (var l = b.start_line; l <= b.end_line; l++) {
+        touched[l] = true;
+        if (b.count > (count[l] || 0)) count[l] = b.count;
+      }
+      if (b.count > max) max = b.count;
+    });
+    (fn.loop_calls || []).forEach(function(c) { (loopAt[c.line] || (loopAt[c.line] = [])).push(c); });
+  });
+  var logMax = Math.log(1 + max);
+  var h = '';
+  lines.forEach(function(l) {
+    var n = l.number, cls = 'ln', cnt = '', style = '';
+    if (hasBlocks) {
+      if (touched[n]) {
+        if (count[n] > 0) {
+          var pct = Math.round(5 + 27 * Math.log(1 + count[n]) / logMax);
+          style = ' style="background:color-mix(in srgb, var(--heat) ' + pct + '%, transparent)"';
+          cnt = fmtCompact(count[n]);
+        } else { cls += ' miss'; cnt = '0'; }
+      }
+    } else if (ui.latest ? l.latest_unreached : l.unreached) {
+      cls += ' miss';
     }
-
-    var icon = blockEl.querySelector('.expand-icon');
-    icon.classList.add('open');
-
-    if (blockEl.getAttribute('data-loaded')) {
-      // Re-insert cached HTML
-      var div = document.createElement('div');
-      div.className = 'source-preview';
-      div.innerHTML = blockEl.getAttribute('data-loaded');
-      blockEl.after(div);
-      return;
+    var fn = fnAt[n];
+    if (fn) cls += ' fnstart';
+    var ann = '';
+    if (fn) {
+      ann += '<span class="ann-fn">' + (typeof fn.calls === 'number' ? fmtInt(fn.calls) + ' call' + (fn.calls === 1 ? '' : 's') + ' · ' : '') + fmtPct(fn.coverage_percent) + ' covered</span>';
     }
+    (loopAt[n] || []).forEach(function(c) {
+      var r = perCall(c);
+      if (r <= 1) return;
+      var target = c.callee ? findFunc(c.callee_file, c.callee) : null;
+      ann += '<span class="ann">' + perCallChip(r).replace('class="chip', (target ? 'data-href="' + codeHref(target.file, target.fn.line) + '" ' : '') + 'title="' + esc(c.expr) + ' ran ' + fmtInt(c.executions) + ' times in ' + fmtInt(c.caller_calls) + ' calls" class="chip') +
+        '<span class="faint">per call' + (c.callee ? ' → ' + esc(c.callee) : '') + '</span></span>';
+    });
+    h += '<div class="' + cls + '" id="L' + n + '"' + style + '><span class="no">' + n + '</span><span class="cnt">' + cnt + '</span><span class="src">' + hl(l.text) + ann + '</span></div>';
+  });
+  return h;
+}
 
-    var loadingEl = document.createElement('div');
-    loadingEl.className = 'source-loading';
-    loadingEl.textContent = 'Loading source…';
-    blockEl.after(loadingEl);
+/* ================= Search ================= */
+var sr = { items: [], sel: 0 };
+function search(q) {
+  q = q.trim().toLowerCase();
+  var box = document.getElementById('search-results');
+  if (!q) { box.classList.remove('open'); return; }
+  var res = [];
+  FUNCS.forEach(function(x) {
+    var n = x.fn.name.toLowerCase(), i = n.indexOf(q);
+    if (i >= 0) res.push({ score: (i === 0 ? 0 : 1) + n.length / 1000, name: x.fn.name, loc: strip(x.file) + ':' + x.fn.line, href: codeHref(x.file, x.fn.line) });
+  });
+  FILES.forEach(function(f) {
+    if (f.file.toLowerCase().indexOf(q) >= 0) res.push({ score: 2, name: baseName(f.file), loc: strip(dirName(f.file)), href: codeHref(f.file) });
+  });
+  res.sort(function(a, b) { return a.score - b.score; });
+  sr.items = res.slice(0, 30); sr.sel = 0;
+  box.innerHTML = sr.items.length ? sr.items.map(function(it, i) {
+    return '<div class="sr-item' + (i === 0 ? ' sel' : '') + '" data-i="' + i + '"><span class="sr-name">' + esc(it.name) + '</span><span class="sr-loc">' + esc(it.loc) + '</span></div>';
+  }).join('') : '<div class="empty">No match.</div>';
+  box.classList.add('open');
+}
+function pickSearch(i) {
+  var it = sr.items[i]; if (!it) return;
+  var input = document.getElementById('search');
+  input.value = ''; input.blur();
+  document.getElementById('search-results').classList.remove('open');
+  location.hash = it.href;
+}
 
-    var file = blockEl.getAttribute('data-file');
-    var start = blockEl.getAttribute('data-start');
-    var end = blockEl.getAttribute('data-end');
-
-    fetch('/api/source?file=' + encodeURIComponent(file) + '&start=' + start + '&end=' + end)
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(data) {
-        loadingEl.remove();
-        var html = '';
-        data.lines.forEach(function(l) {
-          var isUnreached = showLatestUnreached ? l.latest_unreached : l.unreached;
-          html += '<div class="source-line' + (isUnreached ? ' unreached' : '') + '">' +
-            '<span class="line-num">' + l.number + '</span>' +
-            '<span>' + highlightGo(l.text) + '</span></div>';
-        });
-        blockEl.setAttribute('data-loaded', html);
-        var div = document.createElement('div');
-        div.className = 'source-preview';
-        div.innerHTML = html;
-        blockEl.after(div);
-      })
-      .catch(function(err) {
-        loadingEl.textContent = 'Failed to load source: ' + err.message;
-      });
-  }
-
+/* ================= Events ================= */
+function bindGlobal() {
+  window.addEventListener('hashchange', render);
   document.addEventListener('click', function(e) {
-    var block = e.target.closest('.unreached-block[data-file]');
-    if (block) toggleSource(block);
+    var s = e.target.closest('th[data-pkgsort]');
+    if (s) { ui.pkgSort = s.getAttribute('data-pkgsort'); renderPkgTable(); return; }
+    s = e.target.closest('th[data-hotsort]');
+    if (s) { ui.hotSort = s.getAttribute('data-hotsort'); renderHot(); return; }
+    var it = e.target.closest('.sr-item');
+    if (it) { pickSearch(+it.getAttribute('data-i')); return; }
+    if (e.target.closest('a')) return;
+    var row = e.target.closest('[data-href]');
+    if (row && row.getAttribute('data-href')) { location.hash = row.getAttribute('data-href'); return; }
+    if (!e.target.closest('.search')) document.getElementById('search-results').classList.remove('open');
   });
+  var input = document.getElementById('search');
+  input.addEventListener('input', function() { search(this.value); });
+  input.addEventListener('focus', function() { if (this.value) search(this.value); });
+  input.addEventListener('keydown', function(e) {
+    var box = document.getElementById('search-results');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      sr.sel = Math.max(0, Math.min(sr.items.length - 1, sr.sel + (e.key === 'ArrowDown' ? 1 : -1)));
+      box.querySelectorAll('.sr-item').forEach(function(el, i) { el.classList.toggle('sel', i === sr.sel); if (i === sr.sel) el.scrollIntoView({ block: 'nearest' }); });
+    } else if (e.key === 'Enter') { pickSearch(sr.sel); }
+    else if (e.key === 'Escape') { this.blur(); box.classList.remove('open'); }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); input.focus(); }
+  });
+  document.getElementById('theme-btn').addEventListener('click', function() {
+    var root = document.documentElement;
+    var dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    try { localStorage.setItem('goreach-theme', dark ? 'light' : 'dark'); } catch (_) {}
+  });
+}
+
+try { var th = localStorage.getItem('goreach-theme'); if (th) document.documentElement.setAttribute('data-theme', th); } catch (_) {}
+
+Promise.all([
+  fetch('/api/report').then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+  fetch('/api/capabilities').then(function(r) { return r.ok ? r.json() : { source_preview: false }; })
+]).then(function(res) {
+  prepare(res[0]);
+  sourceOK = res[1].source_preview === true;
+  var loops = repeatingLoops().length;
+  var hc = document.getElementById('tab-hot-count');
+  if (loops) { hc.textContent = loops; hc.classList.add('alert'); hc.title = loops + ' calls repeat inside loops'; } else hc.remove();
+  var never = FUNCS.filter(function(x) { return x.fn.coverage_percent === 0; }).length;
+  var cc = document.getElementById('tab-cov-count');
+  if (never) { cc.textContent = never; cc.title = never + ' functions never ran'; } else cc.remove();
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  bindGlobal();
+  render();
+}).catch(function(err) {
+  document.getElementById('loading').classList.add('hidden');
+  var el = document.getElementById('error-msg');
+  el.style.display = 'block';
+  el.textContent = 'Failed to load report: ' + err.message;
+});
 })();
 </script>
 </body>

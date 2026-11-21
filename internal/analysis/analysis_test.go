@@ -90,7 +90,7 @@ func TestAnalyzeFile(t *testing.T) {
 		{Name: "Greet", StartLine: 13, StartCol: 1, EndLine: 18, EndCol: 2},
 	}
 
-	result := analyzeFile(prof, funcs)
+	result := analyzeFile1(prof, funcs)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -135,7 +135,7 @@ func TestAnalyzeFile_BlocksOutsideFunctions(t *testing.T) {
 		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 7, EndCol: 2},
 	}
 
-	result := analyzeFile(prof, funcs)
+	result := analyzeFile1(prof, funcs)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -148,7 +148,7 @@ func TestAnalyzeFile_BlocksOutsideFunctions(t *testing.T) {
 
 	// With no function declarations at all the file is still reported, with
 	// an empty (not nil) function list so it encodes as [].
-	result = analyzeFile(prof, nil)
+	result = analyzeFile1(prof, nil)
 	if result == nil {
 		t.Fatal("expected non-nil result for a file with statements but no functions")
 	}
@@ -167,7 +167,7 @@ func TestAnalyzeFile_NoStatements(t *testing.T) {
 	funcs := []*astmap.FuncExtent{
 		{Name: "FuncA", StartLine: 5, StartCol: 1, EndLine: 7, EndCol: 2},
 	}
-	if result := analyzeFile(prof, funcs); result != nil {
+	if result := analyzeFile1(prof, funcs); result != nil {
 		t.Errorf("expected nil result, got %+v", result)
 	}
 }
@@ -260,7 +260,7 @@ func TestAnalyzeFile_EmptyFunction(t *testing.T) {
 		{Name: "FuncB", StartLine: 15, StartCol: 1, EndLine: 18, EndCol: 2},
 	}
 
-	result := analyzeFile(prof, funcs)
+	result := analyzeFile1(prof, funcs)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -475,7 +475,7 @@ func TestAnalyzeFile_Calls(t *testing.T) {
 		{Name: "Cold", StartLine: 12, StartCol: 1, EndLine: 14, EndCol: 2},
 	}
 
-	result := analyzeFile(&cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "atomic", Blocks: blocks}, funcs)
+	result := analyzeFile1(&cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "atomic", Blocks: blocks}, funcs)
 	for name, want := range map[string]int{"Hot": 41, "Cold": 0} {
 		var got *int
 		for _, fn := range result.Functions {
@@ -488,10 +488,16 @@ func TestAnalyzeFile_Calls(t *testing.T) {
 		}
 	}
 
-	result = analyzeFile(&cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "set", Blocks: blocks}, funcs)
+	result = analyzeFile1(&cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "set", Blocks: blocks}, funcs)
 	for _, fn := range result.Functions {
 		if fn.Calls != nil {
 			t.Errorf("%s: calls = %d in set mode, want none", fn.Name, *fn.Calls)
 		}
 	}
+}
+
+// analyzeFile1 returns the file report of analyzeFile alone.
+func analyzeFile1(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileReport {
+	r, _ := analyzeFile(prof, funcs)
+	return r
 }

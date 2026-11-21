@@ -50,6 +50,7 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	}
 
 	var pkgReports []report.PackageReport
+	var pending [][][]pendingCalls // per package, file, function
 	var totalStmts, totalCovered int
 
 	for _, importPath := range importPaths {
@@ -60,15 +61,18 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 			continue
 		}
 
-		pkgReport := analyzePackage(importPath, diskDir, profs)
+		pkgReport, calls := analyzePackage(importPath, diskDir, profs)
 		if pkgReport == nil {
 			continue
 		}
+		pending = append(pending, calls)
 
 		totalStmts += pkgReport.Total.TotalStatements
 		totalCovered += pkgReport.Total.CoveredStatements
 		pkgReports = append(pkgReports, *pkgReport)
 	}
+
+	resolveLoopCalls(pkgReports, pending)
 
 	mode := "set"
 	if len(profiles) > 0 {
@@ -83,8 +87,11 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	}, nil
 }
 
-func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *report.PackageReport {
+// analyzePackage returns the package's report and, aligned with its files
+// and their functions, the loop calls still to be resolved.
+func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) (*report.PackageReport, [][]pendingCalls) {
 	var fileReports []report.FileReport
+	var pending [][]pendingCalls
 	var pkgStmts, pkgCovered int
 
 	// Sort profiles by filename for deterministic output
@@ -102,11 +109,12 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *repo
 			continue
 		}
 
-		fileReport := analyzeFile(prof, funcs)
+		fileReport, calls := analyzeFile(prof, funcs)
 		if fileReport == nil {
 			continue
 		}
 		fileReport.FileName = prof.FileName
+		pending = append(pending, calls)
 
 		pkgStmts += fileReport.Total.TotalStatements
 		pkgCovered += fileReport.Total.CoveredStatements
@@ -114,14 +122,14 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *repo
 	}
 
 	if len(fileReports) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	return &report.PackageReport{
 		ImportPath: importPath,
 		Total:      report.NewCoverageStats(pkgCovered, pkgStmts),
 		Files:      fileReports,
-	}
+	}, pending
 }
 
 // analyzeFile attributes the profile's blocks to the file's functions.
@@ -129,7 +137,10 @@ func analyzePackage(importPath, diskDir string, profiles []*cover.Profile) *repo
 // The file totals are those of the profile: every block counts, including
 // blocks outside any function declaration (such as a function literal in a
 // package-level var), so they can exceed the sum over Functions.
-func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileReport {
+//
+// With execution counts, it also returns, aligned with the file's functions,
+// the calls each makes inside loops that ran, for [resolveLoopCalls].
+func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) (*report.FileReport, []pendingCalls) {
 	var fileStmts, fileCovered int
 	for _, block := range prof.Blocks {
 		fileStmts += block.NumStmt
@@ -138,16 +149,18 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 		}
 	}
 	if fileStmts == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Set mode records only whether a block ran, not how often.
 	hasCounts := prof.Mode != "set"
 
 	funcReports := make([]report.FuncReport, 0, len(funcs))
+	var pending []pendingCalls
 	for _, fn := range funcs {
 		var totalStmts, coveredStmts int
 		var unreached []report.UnreachedBlock
+		var blocks []report.Block
 		var entry *cover.ProfileBlock // the function's first block
 
 		for i, block := range prof.Blocks {
@@ -159,6 +172,16 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 				entry = &prof.Blocks[i]
 			}
 			totalStmts += block.NumStmt
+			if hasCounts {
+				blocks = append(blocks, report.Block{
+					StartLine:     block.StartLine,
+					StartCol:      block.StartCol,
+					EndLine:       block.EndLine,
+					EndCol:        block.EndCol,
+					NumStatements: block.NumStmt,
+					Count:         block.Count,
+				})
+			}
 			if block.Count > 0 {
 				coveredStmts += block.NumStmt
 			} else {
@@ -179,9 +202,11 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 		// Every entry into the function runs its first block, so that
 		// block's count is the number of calls.
 		var calls *int
+		var loopCalls pendingCalls
 		if hasCounts {
 			n := entry.Count
 			calls = &n
+			loopCalls = loopCallCounts(fn.LoopCalls, blocks, n)
 		}
 
 		funcReports = append(funcReports, report.FuncReport{
@@ -192,13 +217,15 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 			CoveragePercent:   report.ComputePercent(coveredStmts, totalStmts),
 			UnreachedBlocks:   unreached,
 			Calls:             calls,
+			Blocks:            blocks,
 		})
+		pending = append(pending, loopCalls)
 	}
 
 	return &report.FileReport{
 		Total:     report.NewCoverageStats(fileCovered, fileStmts),
 		Functions: funcReports,
-	}
+	}, pending
 }
 
 // blockOverlapsFunc returns true if the coverage block falls within the function's range.

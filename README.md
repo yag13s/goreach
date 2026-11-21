@@ -14,7 +14,8 @@ goreach sits on top of Go's native coverage instrumentation (`go build -cover` /
 - **Flush SDK** -- Lightweight, zero-dependency library to emit coverage data on a schedule, via HTTP, signal, or manual trigger
 - **Multi-build merge** -- Automatically reconcile coverage across different binary versions
 - **Call counts** -- See how often each function was called: which handlers take the traffic, and which are never called at all
-- **Web UI** -- Interactive browser-based viewer with inline source preview
+- **Hotspots & N+1 detection** -- Calls made inside loops, with how often they run per call of their caller, point at N+1 queries and hot paths
+- **Web UI** -- Overview, hotspots, coverage, and a code view with per-line execution counts as a heat map
 - **Cloud-agnostic storage** -- Local disk, S3, GCS, Azure, or any custom backend via a simple interface
 
 ## Install
@@ -113,6 +114,9 @@ goreach summary -profile coverage.txt
 # Call counts (see "Call Counts" below): the hottest and the never-called functions
 goreach summary -top 20 report.json
 goreach summary -cold -pkg myapp/handler report.json
+
+# Calls made inside loops that repeat most: N+1 candidates
+goreach summary -loops 20 report.json
 ```
 
 | Flag | Description |
@@ -122,8 +126,9 @@ goreach summary -cold -pkg myapp/handler report.json
 | `-r` | Recursively search coverdir; if it holds several builds, only the newest is summarized |
 | `-profile <file>` | Text coverage profile path |
 | `-top <n>` | List the N most called functions instead of the package summary (needs a report) |
+| `-loops <n>` | List the N calls made inside loops that ran most, with how often per call of their caller (needs a report) |
 | `-cold` | List the functions that were never called instead of the package summary (needs a report) |
-| `-pkg <prefixes>` | With `-top` / `-cold`: only packages with these import path prefixes (comma-separated) |
+| `-pkg <prefixes>` | With `-top` / `-loops` / `-cold`: only packages with these import path prefixes (comma-separated) |
 
 Summarizing coverage data directly counts every statement in the profile and never looks at source code, so it works on a machine that has only the data. It cannot merge coverage across builds, and its totals include packages `analyze` would skip for lack of source. For numbers that match a report, summarize the report.
 
@@ -152,7 +157,7 @@ When an older build wins on coverage but lacks unreached block detail (e.g. covd
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-src <dir>` | Source root for inline code preview | -- (disabled) |
+| `-src <dir>` | Module root for the code view | current directory if it has a `go.mod`, else disabled |
 | `-port <n>` | HTTP port | `0` (random) |
 | `-no-open` | Don't auto-open browser | `false` |
 
@@ -227,9 +232,10 @@ older builds by function name.
 | Use case | Command | Features |
 |----------|---------|----------|
 | CI / scripts | `analyze -o report.json` | Filter with jq, diffable, store in Git |
-| Human review | `view -src . report.json` | Inline source preview, package tree, block detail |
+| Human review | `view report.json` (from the module root) | Overview, hotspots, coverage, per-line heat map |
 | Text overview | `summary report.json` | Terminal-friendly per-package coverage % |
 | Traffic | `summary -top 20 report.json` | Most called / never called functions |
+| Performance | `summary -loops 20 report.json` | Calls repeating inside loops (N+1 candidates) |
 
 JSON report structure (shortened):
 
@@ -256,10 +262,18 @@ JSON report structure (shortened):
         "calls": 18342,
         "unreached_blocks": [
           {"start_line": 42, "end_line": 45, "num_statements": 2}
+        ],
+        "blocks": [
+          {"start_line": 28, "start_col": 60, "end_line": 31, "end_col": 3, "num_statements": 2, "count": 18342}
+        ],
+        "loop_calls": [
+          {"line": 36, "expr": "h.repo.Get", "callee_file": "myapp/repo/repo.go", "callee": "(*Repo).Get",
+           "takes_context": true, "executions": 513576, "caller_calls": 18342}
         ]
       }]
     }]
-  }]
+  }],
+  "collection": {"first_write": "2025-02-28T02:59:00Z", "last_write": "2025-02-28T08:34:00Z", "builds": 1}
 }
 ```
 
@@ -289,8 +303,8 @@ goreach summary -cold -pkg myapp/handler report.json
 #   ...
 ```
 
-The web UI shows the same numbers: a call count next to every function and a
-"Most Called Functions" table.
+The web UI shows the same numbers on its Hotspots tab, and line by line in the Code tab:
+each line is shaded by how often it ran, and lines that never ran are marked red.
 
 What to keep in mind when reading them:
 
@@ -306,6 +320,33 @@ What to keep in mind when reading them:
   which the function is found (by name, like coverage). Functions that share a name within
   one file keep the newest build's count only.
 - `-covermode=set` data has no counts; `calls` is then omitted from the report.
+
+### Calls inside loops (N+1 candidates)
+
+A function called once per request is fine; one called once per *item* of a list, each time
+doing a database read, is the classic N+1. goreach finds calls made inside `for` / `range`
+loops in the source and divides how often the call ran by how often its caller ran:
+
+```bash
+goreach summary -loops 10 report.json
+# Calls Inside Loops (top 3 of 3 repeating)
+#
+#   per call  executions  call
+#       28.0          56  myapp/handler/marker.go:105  (*MarkerHandler).List → h.likeRepo.HasUserLike  [(*LikeRepository).HasUserLike]  (ctx)
+#       ...
+```
+
+`per call` 28 means each call of `List` made 28 `HasUserLike` calls. `(ctx)` marks a call
+passing a `context.Context`, which usually means I/O; those are the ones worth batching.
+
+- Only calls that matter are recorded: calls to functions in the report, and calls passing a
+  context (an AWS SDK or `database/sql` call in a loop, say).
+- The callee is matched by name, without type information. When several methods share the
+  name and more than one ran, it is left blank; the counts are still right.
+- Loop calls and per-line counts describe the newest build only, so their line numbers match
+  the source you have. With several builds, a function's `calls` still adds up every build.
+- The report records when the counter files were written (`collection`), so `summary -top`
+  and the web UI also show calls per hour.
 
 ## Flush SDK
 

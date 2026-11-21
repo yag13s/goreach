@@ -3,8 +3,10 @@
 package merge
 
 import (
+	"cmp"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -78,7 +80,34 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 		}
 	}
 
-	return Onto(base, others...), nil
+	merged := Onto(base, others...)
+	merged.Collection = mergeCollections(reports)
+	return merged, nil
+}
+
+// mergeCollections returns the time span covering every report's data, or nil
+// if no report records one. Builds is the largest of the reports' counts: the
+// reports may well share builds, so their counts cannot simply be added.
+func mergeCollections(reports []*report.Report) *report.Collection {
+	var c *report.Collection
+	for _, r := range reports {
+		rc := r.Collection
+		if rc == nil {
+			continue
+		}
+		if c == nil {
+			c = &report.Collection{FirstWrite: rc.FirstWrite, LastWrite: rc.LastWrite, Builds: rc.Builds}
+			continue
+		}
+		if rc.FirstWrite.Before(c.FirstWrite) {
+			c.FirstWrite = rc.FirstWrite
+		}
+		if rc.LastWrite.After(c.LastWrite) {
+			c.LastWrite = rc.LastWrite
+		}
+		c.Builds = max(c.Builds, rc.Builds)
+	}
+	return c
 }
 
 // Onto merges others onto base: the result has base's structure (packages,
@@ -99,6 +128,8 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 	// Calls recorded for each function by the reports other than base.
 	// Unlike coverage, calls add up: each report counts its own data.
 	otherCalls := make(map[funcKey]int)
+	// The other reports' versions of each function, for their block counts.
+	otherFuncs := make(map[funcKey][]report.FuncReport)
 	consider := func(r *report.Report, isBase bool) {
 		for _, pkg := range r.Packages {
 			for _, file := range pkg.Files {
@@ -111,6 +142,9 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 					seen[key] = true
 					if !isBase && fn.Calls != nil {
 						otherCalls[key] += *fn.Calls
+					}
+					if !isBase && len(fn.Blocks) > 0 {
+						otherFuncs[key] = append(otherFuncs[key], fn)
 					}
 					existing, ok := lookup[key]
 					if !ok || fn.CoveragePercent > existing.coveragePercent ||
@@ -194,6 +228,7 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 						CoveragePercent:   best.coveragePercent,
 						UnreachedBlocks:   best.unreachedBlocks,
 					}
+					mf.Functions[k].Blocks, mf.Functions[k].LoopCalls = sumBlocks(fn, otherFuncs[key])
 					if hasCalls {
 						mf.Functions[k].Calls = &calls
 					}
@@ -229,6 +264,53 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 
 	recomputeStats(merged)
 	return merged
+}
+
+// sumBlocks returns the block counts and loop calls of base with those of
+// others added in. Only versions of the function compiled from the same
+// source as base, those with the very same blocks, are added: counts from
+// other source cannot be placed on base's lines.
+func sumBlocks(base report.FuncReport, others []report.FuncReport) ([]report.Block, []report.LoopCall) {
+	blocks := slices.Clone(base.Blocks)
+	loopCalls := slices.Clone(base.LoopCalls)
+	type callKey struct {
+		line int
+		expr string
+	}
+	callAt := make(map[callKey]int, len(loopCalls))
+	for i, c := range loopCalls {
+		callAt[callKey{c.Line, c.Expr}] = i
+	}
+	for _, o := range others {
+		if !sameBlocks(base.Blocks, o.Blocks) {
+			continue
+		}
+		for i := range blocks {
+			blocks[i].Count += o.Blocks[i].Count
+		}
+		for _, c := range o.LoopCalls {
+			k := callKey{c.Line, c.Expr}
+			if i, ok := callAt[k]; ok {
+				loopCalls[i].Executions += c.Executions
+				loopCalls[i].CallerCalls += c.CallerCalls
+			} else {
+				callAt[k] = len(loopCalls)
+				loopCalls = append(loopCalls, c)
+			}
+		}
+	}
+	slices.SortStableFunc(loopCalls, func(a, b report.LoopCall) int {
+		return cmp.Or(cmp.Compare(b.Executions, a.Executions), cmp.Compare(a.Line, b.Line))
+	})
+	return blocks, loopCalls
+}
+
+// sameBlocks reports whether a and b list blocks at the same positions.
+func sameBlocks(a, b []report.Block) bool {
+	return len(a) > 0 && slices.EqualFunc(a, b, func(x, y report.Block) bool {
+		return x.StartLine == y.StartLine && x.StartCol == y.StartCol &&
+			x.EndLine == y.EndLine && x.EndCol == y.EndCol
+	})
 }
 
 // mergedFileTotal returns the totals of a base file whose functions have been

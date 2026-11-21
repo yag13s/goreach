@@ -39,6 +39,7 @@ curl -s "http://localhost:$PORT/calc?op=mul&a=3&b=7"
 echo ""
 curl -s "http://localhost:$PORT/health"
 echo ""
+for _ in 1 2 3; do curl -s "http://localhost:$PORT/items" > /dev/null; done
 
 # Stop server (SIGTERM triggers coverage write)
 echo "[4/5] Stopping server (pid=$PID) ..."
@@ -56,4 +57,10 @@ echo "--- Unreached functions (threshold=50) ---"
 go run "$ROOT/cmd/goreach" analyze -coverdir "$COVERDIR" -threshold 50 -pretty
 
 echo ""
+echo "--- Hot spots ---"
+go run "$ROOT/cmd/goreach" analyze -coverdir "$COVERDIR" -o "$COVERDIR/report.json"
+go run "$ROOT/cmd/goreach" summary -top 5 -loops 5 "$COVERDIR/report.json"
+
+echo ""
 echo "Full report: go run ./cmd/goreach analyze -coverdir $COVERDIR -pretty"
+echo "Web UI:      go run ./cmd/goreach view -src . $COVERDIR/report.json"
