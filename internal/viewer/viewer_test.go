@@ -178,6 +178,12 @@ func TestSourceRelPath(t *testing.T) {
 		}
 	})
 
+	t.Run("sibling module sharing a prefix", func(t *testing.T) {
+		if _, err := sourceRelPath("github.com/ex/projx/foo.go", "github.com/ex/proj"); err == nil {
+			t.Fatal("expected error for a file in github.com/ex/projx")
+		}
+	})
+
 	t.Run("module path itself", func(t *testing.T) {
 		if _, err := sourceRelPath("github.com/ex/proj", "github.com/ex/proj"); err == nil {
 			t.Fatal("expected error for a name with nothing after the module path")
@@ -446,6 +452,30 @@ func TestMakeSourceHandler_LatestUnreached(t *testing.T) {
 			if !l.LatestUnreached {
 				t.Errorf("line 6: latest_unreached = false, want true")
 			}
+		}
+	}
+}
+
+func TestRequireLocalHost(t *testing.T) {
+	h := requireLocalHost(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for host, want := range map[string]int{
+		"127.0.0.1:8080":              http.StatusOK,
+		"localhost:8080":              http.StatusOK,
+		"localhost:9000":              http.StatusOK, // forwarded port
+		"localhost":                   http.StatusOK,
+		"[::1]:8080":                  http.StatusOK,
+		"evil.example:8080":           http.StatusForbidden, // DNS rebinding
+		"127.0.0.1.evil.example:8080": http.StatusForbidden,
+		"":                            http.StatusForbidden,
+	} {
+		req := httptest.NewRequest("GET", "/api/report", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("Host %q: status %d, want %d", host, rec.Code, want)
 		}
 	}
 }

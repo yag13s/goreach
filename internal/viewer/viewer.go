@@ -71,7 +71,7 @@ func Serve(reportPath string, opts Options) error {
 	}
 
 	srv := &http.Server{
-		Handler:      mux,
+		Handler:      requireLocalHost(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -99,6 +99,26 @@ func Serve(reportPath string, opts Options) error {
 		return err
 	}
 	return nil
+}
+
+// requireLocalHost rejects requests whose Host header does not name the
+// loopback interface. Binding to 127.0.0.1 keeps other machines out, but a
+// web page can still reach the server through DNS rebinding (a hostname that
+// resolves to 127.0.0.1); its requests carry that hostname, not a loopback
+// one. The port is not checked, so the viewer stays reachable through a
+// forwarded port (ssh -L 9000:localhost:8080).
+func requireLocalHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			http.Error(w, "goreach view only answers requests addressed to localhost or 127.0.0.1", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -176,8 +196,9 @@ func markLines(lines map[string]map[int]bool, fileName string, blocks []report.U
 // sourceRelPath converts a report file_name (import path form) to a
 // slash-separated path relative to the module root.
 func sourceRelPath(fileName, modulePath string) (string, error) {
-	rel, ok := strings.CutPrefix(fileName, modulePath)
-	rel = strings.TrimPrefix(rel, "/")
+	// Require a path boundary: module github.com/a/b must not claim
+	// github.com/a/bc/x.go.
+	rel, ok := strings.CutPrefix(fileName, modulePath+"/")
 	if !ok || rel == "" {
 		return "", fmt.Errorf("file %q does not belong to module %q", fileName, modulePath)
 	}

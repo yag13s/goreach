@@ -33,7 +33,7 @@ mkdir -p /tmp/coverage
 GOCOVERDIR=/tmp/coverage ./myserver
 
 # Stop the process, then analyze
-goreach analyze -coverdir /tmp/coverage -pretty
+goreach analyze -coverdir /tmp/coverage -pretty -o report.json
 ```
 
 <details>
@@ -215,7 +215,7 @@ older builds by function name.
 | Use case | Command | Features |
 |----------|---------|----------|
 | CI / scripts | `analyze -o report.json` | Filter with jq, diffable, store in Git |
-| Human review | `view report.json -src .` | Inline source preview, package tree, block detail |
+| Human review | `view -src . report.json` | Inline source preview, package tree, block detail |
 | Text overview | `summary report.json` | Terminal-friendly per-package coverage % |
 
 JSON report structure (shortened):

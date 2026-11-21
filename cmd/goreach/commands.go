@@ -18,7 +18,10 @@ func runMerge(args []string) error {
 	filterFlags := addFilterFlags(fs)
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
-	paths := fs.Args()
+	paths, err := positionalArgs(fs)
+	if err != nil {
+		return err
+	}
 	if len(paths) == 0 {
 		return fmt.Errorf("at least one report.json path is required")
 	}
@@ -53,10 +56,9 @@ func runView(args []string) error {
 	srcDir := fs.String("src", "", "source root directory for code preview")
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
-	// positional fallback: goreach view report.json
-	path := *reportPath
-	if path == "" && fs.NArg() > 0 {
-		path = fs.Arg(0)
+	path, err := reportPathArg(fs, *reportPath)
+	if err != nil {
+		return err
 	}
 	if path == "" {
 		return fmt.Errorf("report path required")

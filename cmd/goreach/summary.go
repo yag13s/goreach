@@ -24,18 +24,21 @@ func runSummary(args []string) error {
 	profilePath := fs.String("profile", "", "path to text coverage profile file")
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
-	// positional fallback: goreach summary report.json
-	if *reportPath == "" && fs.NArg() > 0 {
-		*reportPath = fs.Arg(0)
+	rptPath, err := reportPathArg(fs, *reportPath)
+	if err != nil {
+		return err
+	}
+	if *recursive && *coverDir == "" {
+		return fmt.Errorf("-r requires -coverdir")
 	}
 
-	if *reportPath != "" {
+	if rptPath != "" {
 		if *profilePath != "" || *coverDir != "" {
 			return fmt.Errorf("a report cannot be combined with -profile or -coverdir")
 		}
-		rpt, err := report.ReadFile(*reportPath)
+		rpt, err := report.ReadFile(rptPath)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", *reportPath, err)
+			return fmt.Errorf("read %s: %w", rptPath, err)
 		}
 		return printSummary(os.Stdout, summarizeReport(rpt))
 	}
@@ -43,9 +46,11 @@ func runSummary(args []string) error {
 	if *profilePath == "" && *coverDir == "" {
 		return fmt.Errorf("a report, -profile or -coverdir is required")
 	}
+	if *profilePath != "" && *coverDir != "" {
+		return fmt.Errorf("-profile and -coverdir are mutually exclusive")
+	}
 
 	var profiles []*cover.Profile
-	var err error
 	switch {
 	case *profilePath != "":
 		profiles, err = covparse.ParseProfileFile(*profilePath)

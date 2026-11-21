@@ -23,6 +23,9 @@ func runAnalyze(args []string) error {
 	pretty := fs.Bool("pretty", false, "pretty-print JSON output")
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
+	if err := noPositionalArgs(fs); err != nil {
+		return err
+	}
 	if *profilePath == "" && *coverDir == "" {
 		return fmt.Errorf("either -profile or -coverdir is required")
 	}
