@@ -2,4 +2,4 @@ module github.com/yag13s/goreach
 
 go 1.27
 
-require golang.org/x/tools v0.51.0
+require golang.org/x/tools v0.53.0
