@@ -332,11 +332,11 @@ goreach summary -loops 10 report.json
 # Calls Inside Loops (top 3 of 3 repeating)
 #
 #   per call  executions  call
-#       28.0          56  myapp/handler/marker.go:105  (*MarkerHandler).List → h.likeRepo.HasUserLike  [(*LikeRepository).HasUserLike]  (ctx)
+#       28.0          56  myapp/handler/order.go:105  (*OrderHandler).List → h.itemRepo.GetItem  [(*ItemRepository).GetItem]  (ctx)
 #       ...
 ```
 
-`per call` 28 means each call of `List` made 28 `HasUserLike` calls. `(ctx)` marks a call
+`per call` 28 means each call of `List` made 28 `GetItem` calls. `(ctx)` marks a call
 passing a `context.Context`, which usually means I/O; those are the ones worth batching.
 
 - Only calls that matter are recorded: calls to functions in the report, and calls passing a
