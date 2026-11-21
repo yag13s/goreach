@@ -96,6 +96,9 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 	// keep base's values.
 	lookup := make(map[funcKey]*funcEntry)
 	ambiguous := make(map[funcKey]bool)
+	// Calls recorded for each function by the reports other than base.
+	// Unlike coverage, calls add up: each report counts its own data.
+	otherCalls := make(map[funcKey]int)
 	consider := func(r *report.Report, isBase bool) {
 		for _, pkg := range r.Packages {
 			for _, file := range pkg.Files {
@@ -106,6 +109,9 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 						ambiguous[key] = true
 					}
 					seen[key] = true
+					if !isBase && fn.Calls != nil {
+						otherCalls[key] += *fn.Calls
+					}
 					existing, ok := lookup[key]
 					if !ok || fn.CoveragePercent > existing.coveragePercent ||
 						(fn.CoveragePercent == existing.coveragePercent && isBase) {
@@ -159,13 +165,25 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 					current = fn.LatestUnreachedBlocks
 				}
 				if best, ok := lookup[key]; ok && !ambiguous[key] {
+					calls, hasCalls := 0, fn.Calls != nil
+					if hasCalls {
+						calls = *fn.Calls
+					}
+					if n, found := otherCalls[key]; found {
+						calls, hasCalls = calls+n, true
+					}
 					// An older build's covdata output lists a generic method
 					// under its bare name. Use that entry if it is better,
 					// unless the bare name could mean another function too.
 					if cn := coverName(fn.Name); cn != fn.Name && coverNames[cn] == 1 {
 						ck := funcKey{fileName: file.FileName, funcName: cn}
-						if alt, found := lookup[ck]; found && !ambiguous[ck] && alt.coveragePercent > best.coveragePercent {
-							best = alt
+						if alt, found := lookup[ck]; found && !ambiguous[ck] {
+							if alt.coveragePercent > best.coveragePercent {
+								best = alt
+							}
+							if n, found := otherCalls[ck]; found {
+								calls, hasCalls = calls+n, true
+							}
 						}
 					}
 					mf.Functions[k] = report.FuncReport{
@@ -175,6 +193,9 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 						CoveredStatements: best.coveredStatements,
 						CoveragePercent:   best.coveragePercent,
 						UnreachedBlocks:   best.unreachedBlocks,
+					}
+					if hasCalls {
+						mf.Functions[k].Calls = &calls
 					}
 					// When an older build won on coverage, its unreached blocks
 					// have line numbers from the old source. Preserve the base

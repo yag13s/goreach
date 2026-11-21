@@ -460,3 +460,38 @@ func TestResolvePackages_SkipsMissingPackages(t *testing.T) {
 		t.Errorf("got %d packages, want 1: %v", len(got), got)
 	}
 }
+
+// TestAnalyzeFile_Calls checks that a function's call count is the count of
+// its first block, and that set-mode data yields none.
+func TestAnalyzeFile_Calls(t *testing.T) {
+	blocks := []cover.ProfileBlock{
+		// Deliberately out of order: the entry block is the earliest one.
+		{StartLine: 7, StartCol: 3, EndLine: 9, EndCol: 3, NumStmt: 1, Count: 2},   // Hot: a branch
+		{StartLine: 5, StartCol: 20, EndLine: 7, EndCol: 3, NumStmt: 1, Count: 41}, // Hot: entry
+		{StartLine: 12, StartCol: 20, EndLine: 14, EndCol: 2, NumStmt: 1, Count: 0},
+	}
+	funcs := []*astmap.FuncExtent{
+		{Name: "Hot", StartLine: 5, StartCol: 1, EndLine: 10, EndCol: 2},
+		{Name: "Cold", StartLine: 12, StartCol: 1, EndLine: 14, EndCol: 2},
+	}
+
+	result := analyzeFile(&cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "atomic", Blocks: blocks}, funcs)
+	for name, want := range map[string]int{"Hot": 41, "Cold": 0} {
+		var got *int
+		for _, fn := range result.Functions {
+			if fn.Name == name {
+				got = fn.Calls
+			}
+		}
+		if got == nil || *got != want {
+			t.Errorf("%s: calls = %v, want %d", name, got, want)
+		}
+	}
+
+	result = analyzeFile(&cover.Profile{FileName: "example.com/pkg/foo.go", Mode: "set", Blocks: blocks}, funcs)
+	for _, fn := range result.Functions {
+		if fn.Calls != nil {
+			t.Errorf("%s: calls = %d in set mode, want none", fn.Name, *fn.Calls)
+		}
+	}
+}

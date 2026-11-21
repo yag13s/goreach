@@ -57,6 +57,15 @@ type FuncReport struct {
 	CoveragePercent       float64          `json:"coverage_percent"`
 	UnreachedBlocks       []UnreachedBlock `json:"unreached_blocks,omitempty"`
 	LatestUnreachedBlocks []UnreachedBlock `json:"latest_unreached_blocks,omitempty"`
+
+	// Calls is how many times the function was entered: the execution count
+	// of its first block. It is nil when the coverage data has no execution
+	// counts (-covermode=set records only whether a block ran).
+	//
+	// The count is only as good as the data: counter files are summed, so a
+	// process that writes cumulative counters more than once (the flush SDK
+	// without Config.Clear) is counted more than once.
+	Calls *int `json:"calls,omitempty"`
 }
 
 // UnreachedBlock describes a contiguous block of unreached code.
@@ -112,6 +121,10 @@ func (r *Report) Clone() *Report {
 				fn := &file.Functions[k]
 				fn.UnreachedBlocks = slices.Clone(fn.UnreachedBlocks)
 				fn.LatestUnreachedBlocks = slices.Clone(fn.LatestUnreachedBlocks)
+				if fn.Calls != nil {
+					calls := *fn.Calls
+					fn.Calls = &calls
+				}
 			}
 		}
 	}

@@ -733,3 +733,56 @@ func TestOnto_GenericMethodNotMatchedWhenPlainFuncSharesName(t *testing.T) {
 		}
 	}
 }
+
+func calls(n int) *int { return &n }
+
+// TestOnto_CallsAddUp checks that call counts are summed across reports,
+// unlike coverage, where the maximum wins.
+func TestOnto_CallsAddUp(t *testing.T) {
+	fn := func(name string, c *int) report.FuncReport {
+		return report.FuncReport{Name: name, TotalStatements: 10, Calls: c}
+	}
+	base := reportWithFile(report.NewCoverageStats(0, 40),
+		fn("Both", calls(3)), fn("BaseOnly", calls(5)), fn("OtherOnly", nil), fn("Neither", nil),
+		fn("(*List[T]).Push", calls(1)))
+	other := reportWithFile(report.CoverageStats{},
+		fn("Both", calls(4)), fn("BaseOnly", nil), fn("OtherOnly", calls(0)),
+		fn("Push", calls(6)), // covdata's name for the generic method
+		fn("Gone", calls(99)))
+	third := reportWithFile(report.CoverageStats{}, fn("Both", calls(10)))
+
+	merged := Onto(base, other, third)
+	want := map[string]*int{
+		"Both":            calls(17),
+		"BaseOnly":        calls(5),
+		"OtherOnly":       calls(0),
+		"Neither":         nil,
+		"(*List[T]).Push": calls(7),
+	}
+	for name, w := range want {
+		got := findFunc(merged, name).Calls
+		switch {
+		case w == nil && got != nil:
+			t.Errorf("%s: calls = %d, want none", name, *got)
+		case w != nil && (got == nil || *got != *w):
+			t.Errorf("%s: calls = %v, want %d", name, got, *w)
+		}
+	}
+	if findFunc(merged, "Gone") != nil {
+		t.Error("a function only in an older report must stay out")
+	}
+}
+
+// TestOnto_CallsOfAmbiguousNamesStayWithBase checks that functions sharing a
+// name keep their own counts instead of each getting the others' as well.
+func TestOnto_CallsOfAmbiguousNamesStayWithBase(t *testing.T) {
+	base := reportWithFile(report.NewCoverageStats(0, 4),
+		report.FuncReport{Name: "init", Line: 3, TotalStatements: 2, Calls: calls(1)},
+		report.FuncReport{Name: "init", Line: 9, TotalStatements: 2, Calls: calls(2)})
+	other := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "init", Calls: calls(50)})
+
+	fns := Onto(base, other).Packages[0].Files[0].Functions
+	if *fns[0].Calls != 1 || *fns[1].Calls != 2 {
+		t.Errorf("calls = %d, %d; want base's 1, 2", *fns[0].Calls, *fns[1].Calls)
+	}
+}
