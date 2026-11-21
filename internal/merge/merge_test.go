@@ -600,7 +600,7 @@ func TestOnto_TotalsFallBackToFunctionsWhenBaseHasNone(t *testing.T) {
 	}
 }
 
-func TestMatchName(t *testing.T) {
+func TestCoverName(t *testing.T) {
 	tests := map[string]string{
 		"Foo":                      "Foo",
 		"(*Server).Handle":         "(*Server).Handle",
@@ -613,8 +613,8 @@ func TestMatchName(t *testing.T) {
 		"(*Weird).Method).Strange": "(*Weird).Method).Strange",
 	}
 	for in, want := range tests {
-		if got := matchName(in); got != want {
-			t.Errorf("matchName(%q) = %q, want %q", in, got, want)
+		if got := coverName(in); got != want {
+			t.Errorf("coverName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -690,16 +690,46 @@ func TestOnto_RemergeKeepsLatestBlocks(t *testing.T) {
 	})
 }
 
-// TestOnto_PercentMatchesCounts checks that when an older build wins, the
-// percentage shown agrees with the statement counts derived from it.
-func TestOnto_PercentMatchesCounts(t *testing.T) {
-	base := reportWithFile(report.NewCoverageStats(2, 7), report.FuncReport{
-		Name: "Foo", TotalStatements: 7, CoveredStatements: 2, CoveragePercent: report.ComputePercent(2, 7),
-	})
-	older := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "Foo", CoveragePercent: 50})
+// TestOnto_GenericMethodsMatchExactlyBetweenReports checks that reports
+// carrying full names still merge generic methods one to one, even when two
+// types in a file share a method name, and that a bare covdata name which
+// could mean either of them is not applied to both.
+func TestOnto_GenericMethodsMatchExactlyBetweenReports(t *testing.T) {
+	fn := func(name string, covered int) report.FuncReport {
+		return report.FuncReport{Name: name, TotalStatements: 10, CoveredStatements: covered,
+			CoveragePercent: report.ComputePercent(covered, 10)}
+	}
+	base := reportWithFile(report.NewCoverageStats(0, 20), fn("(*List[T]).Len", 0), fn("(*Map[K, V]).Len", 0))
+	older := reportWithFile(report.NewCoverageStats(10, 20), fn("(*List[T]).Len", 10), fn("(*Map[K, V]).Len", 0))
+	covdata := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "Len", CoveragePercent: 100})
 
-	got := findFunc(Onto(base, older), "Foo")
-	if want := report.ComputePercent(got.CoveredStatements, got.TotalStatements); got.CoveragePercent != want {
-		t.Errorf("percent %v disagrees with %d/%d (%v)", got.CoveragePercent, got.CoveredStatements, got.TotalStatements, want)
+	merged := Onto(base, older, covdata)
+	if got := findFunc(merged, "(*List[T]).Len"); got.CoveredStatements != 10 {
+		t.Errorf("(*List[T]).Len = %+v, want 10/10 from the older report", got)
+	}
+	if got := findFunc(merged, "(*Map[K, V]).Len"); got.CoveredStatements != 0 {
+		t.Errorf("(*Map[K, V]).Len = %+v, want 0/10: the bare name Len is ambiguous", got)
+	}
+}
+
+// TestOnto_GenericMethodNotMatchedWhenPlainFuncSharesName checks that a bare
+// covdata name is not applied to a generic method when the file also has a
+// plain function of that name.
+func TestOnto_GenericMethodNotMatchedWhenPlainFuncSharesName(t *testing.T) {
+	base := reportWithFile(report.NewCoverageStats(0, 20),
+		report.FuncReport{Name: "(*List[T]).Push", TotalStatements: 10},
+		report.FuncReport{Name: "Push", TotalStatements: 10},
+	)
+	// cmd/cover names both "Push"; which line is which cannot be told.
+	covdata := reportWithFile(report.CoverageStats{},
+		report.FuncReport{Name: "Push", CoveragePercent: 100},
+		report.FuncReport{Name: "Push", CoveragePercent: 0},
+	)
+
+	merged := Onto(base, covdata)
+	for _, name := range []string{"(*List[T]).Push", "Push"} {
+		if got := findFunc(merged, name); got.CoveredStatements != 0 || got.CoveragePercent != 0 {
+			t.Errorf("%s = %+v, want base's 0/10 kept", name, got)
+		}
 	}
 }

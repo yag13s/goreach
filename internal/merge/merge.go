@@ -14,16 +14,15 @@ import (
 // funcKey uniquely identifies a function across builds (line numbers may shift).
 type funcKey struct {
 	fileName string
-	funcName string // matchName of the function
+	funcName string
 }
 
-// matchName returns the name a function is matched by across reports.
-//
-// It follows cmd/cover, whose names `go tool covdata func` prints: a receiver
-// is kept only when it is a plain or pointer type name, so a method on a
-// generic type, "(*List[T]).Push" in astmap form, is known as just "Push".
-// Matching by that name also survives a renamed type parameter.
-func matchName(name string) string {
+// coverName returns the name cmd/cover, and so `go tool covdata func`, gives
+// a function known to astmap as name. cmd/cover keeps a receiver only when
+// it is a plain or pointer type name, so a method on a generic type,
+// "(*List[T]).Push" in astmap form, is just "Push" there. For every other
+// function the two agree and name is returned unchanged.
+func coverName(name string) string {
 	if !strings.HasPrefix(name, "(") {
 		return name
 	}
@@ -92,8 +91,9 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 	// Build a lookup of max coverage per function across all reports.
 	//
 	// A key that names more than one function in any single report (several
-	// init funcs in a file, or a generic method and a plain func sharing a
-	// name) cannot be matched reliably; such functions keep base's values.
+	// init funcs in a file; in covdata output also a generic method and a
+	// plain func sharing a name) cannot be matched reliably; such functions
+	// keep base's values.
 	lookup := make(map[funcKey]*funcEntry)
 	ambiguous := make(map[funcKey]bool)
 	consider := func(r *report.Report, isBase bool) {
@@ -101,7 +101,7 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 			for _, file := range pkg.Files {
 				seen := make(map[funcKey]bool, len(file.Functions))
 				for _, fn := range file.Functions {
-					key := funcKey{fileName: file.FileName, funcName: matchName(fn.Name)}
+					key := funcKey{fileName: file.FileName, funcName: fn.Name}
 					if seen[key] {
 						ambiguous[key] = true
 					}
@@ -144,8 +144,13 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 				FileName:  file.FileName,
 				Functions: make([]report.FuncReport, len(file.Functions)),
 			}
+			// How many of the file's functions cmd/cover knows by each name.
+			coverNames := make(map[string]int, len(file.Functions))
+			for _, fn := range file.Functions {
+				coverNames[coverName(fn.Name)]++
+			}
 			for k, fn := range file.Functions {
-				key := funcKey{fileName: file.FileName, funcName: matchName(fn.Name)}
+				key := funcKey{fileName: file.FileName, funcName: fn.Name}
 				// The blocks for the current source: a base that is itself a
 				// merge result keeps them in LatestUnreachedBlocks when an
 				// older build had won.
@@ -154,6 +159,15 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 					current = fn.LatestUnreachedBlocks
 				}
 				if best, ok := lookup[key]; ok && !ambiguous[key] {
+					// An older build's covdata output lists a generic method
+					// under its bare name. Use that entry if it is better,
+					// unless the bare name could mean another function too.
+					if cn := coverName(fn.Name); cn != fn.Name && coverNames[cn] == 1 {
+						ck := funcKey{fileName: file.FileName, funcName: cn}
+						if alt, found := lookup[ck]; found && !ambiguous[ck] && alt.coveragePercent > best.coveragePercent {
+							best = alt
+						}
+					}
 					mf.Functions[k] = report.FuncReport{
 						Name:              fn.Name,
 						Line:              fn.Line, // always use base (current source) line
@@ -181,9 +195,6 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 						covered := int(math.Round(float64(total) * best.coveragePercent / 100))
 						mf.Functions[k].TotalStatements = total
 						mf.Functions[k].CoveredStatements = covered
-						// Keep the percentage consistent with the counts shown
-						// next to it; rounding never drops it below base's.
-						mf.Functions[k].CoveragePercent = report.ComputePercent(covered, total)
 					}
 				} else {
 					mf.Functions[k] = fn
