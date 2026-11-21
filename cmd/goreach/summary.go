@@ -22,6 +22,9 @@ func runSummary(args []string) error {
 	coverDir := fs.String("coverdir", "", "GOCOVERDIR path")
 	recursive := fs.Bool("r", false, "recursively search -coverdir for coverage data")
 	profilePath := fs.String("profile", "", "path to text coverage profile file")
+	top := fs.Int("top", 0, "list the N most called functions instead of the package summary (needs a report)")
+	cold := fs.Bool("cold", false, "list the functions that were never called instead of the package summary (needs a report)")
+	pkgFilter := fs.String("pkg", "", "with -top/-cold: package filter (comma-separated import path prefixes)")
 	_ = fs.Parse(args) // ExitOnError: never returns error
 
 	rptPath, err := reportPathArg(fs, *reportPath)
@@ -31,6 +34,16 @@ func runSummary(args []string) error {
 	if *recursive && *coverDir == "" {
 		return fmt.Errorf("-r requires -coverdir")
 	}
+	if *top < 0 {
+		return fmt.Errorf("-top must be non-negative")
+	}
+	byCalls := *top > 0 || *cold
+	if *pkgFilter != "" && !byCalls {
+		return fmt.Errorf("-pkg applies to -top and -cold only")
+	}
+	if byCalls && rptPath == "" {
+		return fmt.Errorf("-top and -cold need a report: run `goreach analyze -o report.json` first")
+	}
 
 	if rptPath != "" {
 		if *profilePath != "" || *coverDir != "" {
@@ -39,6 +52,13 @@ func runSummary(args []string) error {
 		rpt, err := report.ReadFile(rptPath)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", rptPath, err)
+		}
+		if byCalls {
+			var prefixes []string
+			if *pkgFilter != "" {
+				prefixes = strings.Split(*pkgFilter, ",")
+			}
+			return printCalls(os.Stdout, rpt, prefixes, *top, *cold)
 		}
 		return printSummary(os.Stdout, summarizeReport(rpt))
 	}

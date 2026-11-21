@@ -146,6 +146,11 @@ details[open] > summary::before { transform: rotate(90deg); }
 .func-name { min-width: 180px; }
 .func-line { color: var(--text-dim); font-size: 0.8rem; min-width: 50px; }
 .func-stmts { color: var(--text-dim); font-size: 0.8rem; min-width: 70px; }
+.func-calls { color: var(--text-dim); font-size: 0.8rem; min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+.func-calls.never { color: var(--red); }
+.calls-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calls-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--blue); vertical-align: middle; min-width: 2px; }
+.calls-note { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem; }
 .unreached-block {
   padding: 0.15rem 0.5rem 0.15rem 4rem;
   font-size: 0.8rem;
@@ -340,6 +345,10 @@ details[open] > summary::before { transform: rotate(90deg); }
   <div id="summary-cards"></div>
   <h2 id="section-packages">Packages / Files / Functions</h2>
   <div id="packages"></div>
+  <div id="section-calls" style="display:none">
+    <h2 class="section-divider">Most Called Functions <span id="calls-count" style="color:var(--text-dim);font-weight:400"></span></h2>
+    <div id="most-called"></div>
+  </div>
   <h2 id="section-dead" class="section-divider">Dead Code Candidates <span id="dead-count" style="color:var(--text-dim);font-weight:400"></span></h2>
   <div id="dead-code"></div>
   <h2 id="section-partial" class="section-divider">Partial Coverage <span id="partial-count" style="color:var(--text-dim);font-weight:400"></span></h2>
@@ -644,7 +653,8 @@ details[open] > summary::before { transform: rotate(90deg); }
             '<span class="func-name" style="color:' + covColor(fn.coverage_percent) + '">' + esc(fn.name) + '</span>' +
             '<span class="func-line">L' + fn.line + '</span>' +
             barHTML(fn.coverage_percent) +
-            '<span class="func-stmts">' + fn.covered_statements + '/' + fn.total_statements + ' stmts</span></div>';
+            '<span class="func-stmts">' + fn.covered_statements + '/' + fn.total_statements + ' stmts</span>' +
+            callsHTML(fn) + '</div>';
 
           var blocks = getUnreachedBlocks(fn);
           if (blocks && blocks.length > 0) {
@@ -700,6 +710,54 @@ details[open] > summary::before { transform: rotate(90deg); }
     var stripped = stripPrefix(filePath);
     var idx = stripped.lastIndexOf('/');
     return idx >= 0 ? stripped.substring(idx + 1) : stripped;
+  }
+
+  /* Thousands separators: 1234567 -> 1,234,567 */
+  function fmtCount(n) {
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  /* Call count of a function, when the report has one (atomic/count mode). */
+  function callsHTML(fn) {
+    if (typeof fn.calls !== 'number') return '';
+    if (fn.calls === 0) return '<span class="func-calls never">never called</span>';
+    return '<span class="func-calls">' + fmtCount(fn.calls) + ' call' + (fn.calls !== 1 ? 's' : '') + '</span>';
+  }
+
+  var MOST_CALLED_LIMIT = 25;
+
+  function renderMostCalled(pkgs) {
+    var withCalls = collectFuncs(pkgs).filter(function(x) { return typeof x.fn.calls === 'number'; });
+    if (withCalls.length === 0) return; // no execution counts in this report
+
+    var called = withCalls.filter(function(x) { return x.fn.calls > 0; });
+    called.sort(function(a, b) { return b.fn.calls - a.fn.calls; });
+    var shown = called.slice(0, MOST_CALLED_LIMIT);
+
+    document.getElementById('section-calls').style.display = '';
+    document.getElementById('calls-count').textContent =
+      '(top ' + shown.length + ' of ' + called.length + ' called, ' + (withCalls.length - called.length) + ' never called)';
+
+    var el = document.getElementById('most-called');
+    var note = '<p class="calls-note">Calls are how often each function was entered while coverage was collected. ' +
+      'They are exact only if counters are cleared after each flush (flush.Config.Clear).</p>';
+    if (shown.length === 0) {
+      el.innerHTML = note + '<p style="color:var(--text-dim)">No function was called.</p>';
+      return;
+    }
+
+    var max = shown[0].fn.calls;
+    var html = note + '<table class="full-table"><thead><tr>' +
+      '<th>Location</th><th>Function</th><th style="text-align:right">Calls</th><th style="width:30%"></th></tr></thead><tbody>';
+    shown.forEach(function(x) {
+      var w = Math.max(1, Math.round(x.fn.calls / max * 100));
+      html += '<tr><td>' + esc(stripPrefix(x.file)) + ':' + x.fn.line + '</td>' +
+        '<td>' + esc(x.fn.name) + '()</td>' +
+        '<td class="calls-cell">' + fmtCount(x.fn.calls) + '</td>' +
+        '<td><span class="calls-bar" style="width:' + w + '%"></span></td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
   }
 
   function renderDeadCode(pkgs) {
@@ -865,6 +923,7 @@ details[open] > summary::before { transform: rotate(90deg); }
       renderHeader(rpt);
       renderSummaryCards(rpt.packages);
       renderPackages(rpt.packages);
+      renderMostCalled(rpt.packages);
       renderDeadCode(rpt.packages);
       renderPartial(rpt.packages);
       renderFullCoverage(rpt.packages);

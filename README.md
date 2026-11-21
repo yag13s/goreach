@@ -13,6 +13,7 @@ goreach sits on top of Go's native coverage instrumentation (`go build -cover` /
 - **Production coverage analysis** -- Collect coverage from long-running services without stopping them
 - **Flush SDK** -- Lightweight, zero-dependency library to emit coverage data on a schedule, via HTTP, signal, or manual trigger
 - **Multi-build merge** -- Automatically reconcile coverage across different binary versions
+- **Call counts** -- See how often each function was called: which handlers take the traffic, and which are never called at all
 - **Web UI** -- Interactive browser-based viewer with inline source preview
 - **Cloud-agnostic storage** -- Local disk, S3, GCS, Azure, or any custom backend via a simple interface
 
@@ -108,6 +109,10 @@ goreach summary report.json
 # Straight from coverage data: no source tree needed
 goreach summary -coverdir ./coverage
 goreach summary -profile coverage.txt
+
+# Call counts (see "Call Counts" below): the hottest and the never-called functions
+goreach summary -top 20 report.json
+goreach summary -cold -pkg myapp/handler report.json
 ```
 
 | Flag | Description |
@@ -116,6 +121,9 @@ goreach summary -profile coverage.txt
 | `-coverdir <dir>` | GOCOVERDIR path |
 | `-r` | Recursively search coverdir; if it holds several builds, only the newest is summarized |
 | `-profile <file>` | Text coverage profile path |
+| `-top <n>` | List the N most called functions instead of the package summary (needs a report) |
+| `-cold` | List the functions that were never called instead of the package summary (needs a report) |
+| `-pkg <prefixes>` | With `-top` / `-cold`: only packages with these import path prefixes (comma-separated) |
 
 Summarizing coverage data directly counts every statement in the profile and never looks at source code, so it works on a machine that has only the data. It cannot merge coverage across builds, and its totals include packages `analyze` would skip for lack of source. For numbers that match a report, summarize the report.
 
@@ -221,6 +229,7 @@ older builds by function name.
 | CI / scripts | `analyze -o report.json` | Filter with jq, diffable, store in Git |
 | Human review | `view -src . report.json` | Inline source preview, package tree, block detail |
 | Text overview | `summary report.json` | Terminal-friendly per-package coverage % |
+| Traffic | `summary -top 20 report.json` | Most called / never called functions |
 
 JSON report structure (shortened):
 
@@ -244,6 +253,7 @@ JSON report structure (shortened):
         "total_statements": 12,
         "covered_statements": 9,
         "coverage_percent": 75.0,
+        "calls": 18342,
         "unreached_blocks": [
           {"start_line": 42, "end_line": 45, "num_statements": 2}
         ]
@@ -254,6 +264,48 @@ JSON report structure (shortened):
 ```
 
 </details>
+
+## Call Counts
+
+With `-covermode=atomic` (or `count`) the coverage counters record how many times each block
+ran, not just whether it ran. goreach reports that per function as `calls`: the number of
+times the function was entered. For an HTTP handler, that is how many requests it served.
+
+```bash
+goreach analyze -coverdir coverage-data -r -o report.json
+
+goreach summary -top 5 -pkg myapp/handler report.json
+# Most Called Functions (top 5 of 31 called)
+#
+#      calls  function
+#  1,204,551  myapp/handler/user.go:42  (*UserHandler).Get
+#    310,022  myapp/handler/feed.go:18  (*FeedHandler).List
+#    ...
+
+goreach summary -cold -pkg myapp/handler report.json
+# Never Called Functions (4 of 35, 61 statements)
+#
+#   myapp/handler/export.go:12  (*ExportHandler).CSV  (14 stmts)
+#   ...
+```
+
+The web UI shows the same numbers: a call count next to every function and a
+"Most Called Functions" table.
+
+What to keep in mind when reading them:
+
+- **Use `Clear: true` in the flush SDK.** Counter files are added up. With `Clear`, each flush
+  writes what happened since the previous one, and the sum is exact. Without it, every flush
+  writes the totals since process start again, so the sum counts the same calls repeatedly.
+  Coverage percentages are not affected either way.
+- **"Never called" means never called while coverage was collected.** A monthly batch or an
+  error path that has not fired yet looks the same as dead code. Collect for long enough
+  before deleting anything.
+- **Calls are per function, not per route.** One handler serving several routes has one count.
+- **Across builds, calls add up.** `analyze -r` and `merge` sum the calls of every build in
+  which the function is found (by name, like coverage). Functions that share a name within
+  one file keep the newest build's count only.
+- `-covermode=set` data has no counts; `calls` is then omitted from the report.
 
 ## Flush SDK
 

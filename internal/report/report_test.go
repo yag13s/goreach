@@ -354,3 +354,31 @@ func TestReadFile_RejectsDuplicateKeys(t *testing.T) {
 		t.Fatal("expected an error for a report with a duplicated key")
 	}
 }
+
+// TestCalls_JSON checks that a call count of zero is written (it means
+// "never called") while an unknown one is left out.
+func TestCalls_JSON(t *testing.T) {
+	zero := 0
+	r := &Report{Version: SchemaVersion, Packages: []PackageReport{{Files: []FileReport{{Functions: []FuncReport{
+		{Name: "Never", Calls: &zero},
+		{Name: "Unknown"},
+	}}}}}}
+	var buf bytes.Buffer
+	if err := r.Write(&buf, false); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"name":"Never","line":0,"total_statements":0,"covered_statements":0,"coverage_percent":0,"calls":0}`) {
+		t.Errorf("zero calls not written: %s", out)
+	}
+	if strings.Count(out, `"calls"`) != 1 {
+		t.Errorf("unknown calls must be omitted: %s", out)
+	}
+
+	// And the clone does not share the counter.
+	c := r.Clone()
+	*c.Packages[0].Files[0].Functions[0].Calls = 5
+	if zero != 0 {
+		t.Error("Clone shares Calls with the original")
+	}
+}

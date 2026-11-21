@@ -141,14 +141,22 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 		return nil
 	}
 
+	// Set mode records only whether a block ran, not how often.
+	hasCounts := prof.Mode != "set"
+
 	funcReports := make([]report.FuncReport, 0, len(funcs))
 	for _, fn := range funcs {
 		var totalStmts, coveredStmts int
 		var unreached []report.UnreachedBlock
+		var entry *cover.ProfileBlock // the function's first block
 
-		for _, block := range prof.Blocks {
+		for i, block := range prof.Blocks {
 			if !blockOverlapsFunc(block, fn) {
 				continue
+			}
+			if entry == nil || block.StartLine < entry.StartLine ||
+				(block.StartLine == entry.StartLine && block.StartCol < entry.StartCol) {
+				entry = &prof.Blocks[i]
 			}
 			totalStmts += block.NumStmt
 			if block.Count > 0 {
@@ -168,6 +176,14 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 			continue
 		}
 
+		// Every entry into the function runs its first block, so that
+		// block's count is the number of calls.
+		var calls *int
+		if hasCounts {
+			n := entry.Count
+			calls = &n
+		}
+
 		funcReports = append(funcReports, report.FuncReport{
 			Name:              fn.Name,
 			Line:              fn.StartLine,
@@ -175,6 +191,7 @@ func analyzeFile(prof *cover.Profile, funcs []*astmap.FuncExtent) *report.FileRe
 			CoveredStatements: coveredStmts,
 			CoveragePercent:   report.ComputePercent(coveredStmts, totalStmts),
 			UnreachedBlocks:   unreached,
+			Calls:             calls,
 		})
 	}
 

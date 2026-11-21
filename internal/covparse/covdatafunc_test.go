@@ -1,6 +1,10 @@
 package covparse
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/tools/cover"
+)
 
 func TestNormalizeCovdataFuncName(t *testing.T) {
 	tests := []struct {
@@ -86,5 +90,66 @@ func TestParseCovdataFuncOutput_ModuleStartingWithTotal(t *testing.T) {
 	funcs := parseCovdataFuncOutput(out)
 	if len(funcs) != 1 || funcs[0].FileName != "totally.dev/x/a.go" || funcs[0].FuncName != "Run" {
 		t.Errorf("got %+v, want one Run in totally.dev/x/a.go", funcs)
+	}
+}
+
+func TestParseCovdataFuncOutput_Line(t *testing.T) {
+	funcs := parseCovdataFuncOutput("example.com/x/a.go:42:\t\tRun\t\t50.0%\n")
+	if len(funcs) != 1 || funcs[0].Line != 42 {
+		t.Errorf("got %+v, want Run at line 42", funcs)
+	}
+}
+
+func TestAttachCalls(t *testing.T) {
+	funcs := []FuncCoverage{
+		{FileName: "example.com/x/a.go", FuncName: "Second", Line: 20},
+		{FileName: "example.com/x/a.go", FuncName: "First", Line: 5},
+		{FileName: "example.com/x/a.go", FuncName: "Empty", Line: 30}, // no block before Last
+		{FileName: "example.com/x/a.go", FuncName: "Last", Line: 31},
+		{FileName: "example.com/x/b.go", FuncName: "NoProfile", Line: 3},
+		{FileName: "example.com/x/a.go", FuncName: "NoLine"},
+		{FileName: "example.com/x/set.go", FuncName: "SetMode", Line: 3},
+	}
+	profiles := []*cover.Profile{
+		{FileName: "example.com/x/a.go", Mode: "atomic", Blocks: []cover.ProfileBlock{
+			{StartLine: 22, StartCol: 3, EndLine: 23, EndCol: 3, NumStmt: 1, Count: 1},
+			{StartLine: 20, StartCol: 15, EndLine: 22, EndCol: 3, NumStmt: 1, Count: 9}, // Second's entry
+			{StartLine: 5, StartCol: 14, EndLine: 7, EndCol: 2, NumStmt: 1, Count: 7},   // First's entry
+			{StartLine: 31, StartCol: 13, EndLine: 33, EndCol: 2, NumStmt: 1, Count: 0}, // Last's entry
+		}},
+		{FileName: "example.com/x/set.go", Mode: "set", Blocks: []cover.ProfileBlock{
+			{StartLine: 3, StartCol: 10, EndLine: 4, EndCol: 2, NumStmt: 1, Count: 1},
+		}},
+	}
+
+	AttachCalls(funcs, profiles)
+
+	want := map[string]int{"First": 7, "Second": 9, "Last": 0}
+	for _, fc := range funcs {
+		w, known := want[fc.FuncName]
+		switch {
+		case known && (fc.Calls == nil || *fc.Calls != w):
+			t.Errorf("%s: calls = %v, want %d", fc.FuncName, fc.Calls, w)
+		case !known && fc.Calls != nil:
+			t.Errorf("%s: calls = %d, want unknown", fc.FuncName, *fc.Calls)
+		}
+	}
+}
+
+// TestAttachCalls_SameLine checks that functions declared on one line, which
+// cannot be told apart by line, get no call count rather than a wrong one.
+func TestAttachCalls_SameLine(t *testing.T) {
+	funcs := []FuncCoverage{
+		{FileName: "a.go", FuncName: "A", Line: 3},
+		{FileName: "a.go", FuncName: "B", Line: 3},
+	}
+	AttachCalls(funcs, []*cover.Profile{{FileName: "a.go", Mode: "atomic", Blocks: []cover.ProfileBlock{
+		{StartLine: 3, StartCol: 12, EndLine: 3, EndCol: 20, NumStmt: 1, Count: 4},
+		{StartLine: 3, StartCol: 34, EndLine: 3, EndCol: 40, NumStmt: 1, Count: 6},
+	}}})
+	for _, fc := range funcs {
+		if fc.Calls != nil {
+			t.Errorf("%s: calls = %d, want unknown", fc.FuncName, *fc.Calls)
+		}
 	}
 }

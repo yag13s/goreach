@@ -43,6 +43,13 @@ func Analyze(groups []covparse.BuildGroup, opts analysis.Options) (*report.Repor
 		if err != nil {
 			return nil, err
 		}
+		// Call counts add up across builds, so each older build's are
+		// needed too. They come from its profiles, not from covdata func.
+		olderProfiles, err := g.Profiles()
+		if err != nil {
+			return nil, err
+		}
+		covparse.AttachCalls(funcs, olderProfiles)
 		olderFuncs = append(olderFuncs, funcs)
 	}
 	return combine(newestReport, olderFuncs), nil
@@ -71,6 +78,7 @@ func reportFromFuncCoverage(funcs []covparse.FuncCoverage) *report.Report {
 		byFile[fc.FileName] = append(byFile[fc.FileName], report.FuncReport{
 			Name:            fc.FuncName,
 			CoveragePercent: fc.CoveragePercent,
+			Calls:           fc.Calls,
 		})
 	}
 
