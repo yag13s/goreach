@@ -382,10 +382,12 @@ details[open] > summary::before { transform: rotate(90deg); }
       '<div class="gauge-text" style="color:' + covColor(pct) + '">' + fmt(pct) + '%</div></div>';
   }
 
+  // esc escapes s for HTML text and for quoted attribute values.
   function esc(s) {
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   /* Syntax highlighting for Go source */
