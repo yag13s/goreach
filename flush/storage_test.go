@@ -282,3 +282,67 @@ func TestWriterStorage_NilWriter(t *testing.T) {
 
 // Ensure io is used (WriterStorage implements Storage using io.Writer).
 var _ io.Writer = &errWriter{}
+
+// TestCopyFile_FailureKeepsDestination checks that a copy that fails part way
+// leaves an existing destination untouched and no temporary file behind.
+func TestCopyFile_FailureKeepsDestination(t *testing.T) {
+	dstDir := t.TempDir()
+	dst := filepath.Join(dstDir, "covmeta.abc")
+	if err := os.WriteFile(dst, []byte("previous"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Opening a directory succeeds but reading it fails, so the copy fails
+	// after the temporary file has been created.
+	if err := copyFile(t.TempDir(), dst); err == nil {
+		t.Fatal("copyFile from a directory succeeded, want an error")
+	}
+
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "previous" {
+		t.Errorf("destination = %q after failed copy, want it unchanged", data)
+	}
+	entries, err := os.ReadDir(dstDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("destination dir holds %v, want only covmeta.abc", names)
+	}
+}
+
+func TestCopyFile_Permissions(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := copyFile(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	// Whatever os.Create gives a new file under the current umask.
+	ref := filepath.Join(t.TempDir(), "ref")
+	f, err := os.Create(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	want, err := os.Stat(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != want.Mode().Perm() {
+		t.Errorf("mode = %v, want %v as os.Create would give", fi.Mode().Perm(), want.Mode().Perm())
+	}
+}

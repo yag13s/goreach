@@ -1,9 +1,9 @@
 package flushhttp
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -26,7 +26,7 @@ func TestHandler_Routing(t *testing.T) {
 			name:       "POST flush",
 			method:     "POST",
 			path:       "/internal/coverage/flush",
-			wantStatus: http.StatusOK, // Emit() returns nil when not enabled
+			wantStatus: http.StatusServiceUnavailable, // flush.Enable not called
 		},
 		{
 			name:       "POST clear",
@@ -67,30 +67,16 @@ func TestHandler_Routing(t *testing.T) {
 	}
 }
 
-func TestHandleFlush_ResponseJSON(t *testing.T) {
-	h := Handler()
-
-	req := httptest.NewRequest("POST", "/internal/coverage/flush", nil)
+// The success path needs a -cover binary; see TestIntegration_HTTPHandler in
+// package flush.
+func TestHandleFlush_NotEnabled(t *testing.T) {
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/internal/coverage/flush", nil))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
-
-	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-
-	var resp map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if resp["status"] != "ok" {
-		t.Errorf("status = %q, want ok", resp["status"])
-	}
-	if resp["flushed"] == "" {
-		t.Error("flushed timestamp should not be empty")
+	if !strings.Contains(rec.Body.String(), "not enabled") {
+		t.Errorf("body = %q, want it to say flushing is not enabled", rec.Body)
 	}
 }

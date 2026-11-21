@@ -2,6 +2,7 @@ package flush
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
@@ -11,8 +12,11 @@ import (
 
 // Storage abstracts the destination for coverage data files.
 type Storage interface {
-	// Store saves coverage files (covmeta + covcounters) from a temporary directory.
-	// files is a list of file paths within the temp directory.
+	// Store saves coverage files (covmeta + covcounters). files are paths to
+	// temporary files that are removed once Store returns; they need not
+	// share a directory, and each is to be stored under its base name. With
+	// Config.Clear, counter files of earlier flushes whose Store failed are
+	// included again, so storing a file must be safe to repeat.
 	Store(ctx context.Context, files []string, meta Metadata) error
 }
 
@@ -73,6 +77,9 @@ func (s WriterStorage) Store(_ context.Context, files []string, meta Metadata) e
 	return nil
 }
 
+// copyFile copies src to dst atomically: it writes a temporary file next to
+// dst and renames it into place, so a failed copy never leaves a truncated
+// file and a concurrent reader (goreach analyze) never sees a partial one.
 func copyFile(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -80,16 +87,26 @@ func copyFile(src, dst string) (err error) {
 	}
 	defer in.Close()
 
-	out, err := os.Create(dst)
+	// O_EXCL with mode 0666 rather than os.CreateTemp, which would create the
+	// file 0600: the result should get the permissions os.Create gives it,
+	// umask applied.
+	tmp := filepath.Join(filepath.Dir(dst), ".goreach-tmp-"+rand.Text())
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666) //nolint:gosec // same mode as os.Create; the umask decides
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if cerr := out.Close(); err == nil {
-			err = cerr
+		if err != nil {
+			_ = os.Remove(tmp)
 		}
 	}()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err = out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
 }

@@ -2,6 +2,7 @@ package objstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -215,5 +216,32 @@ func TestDefaultKey(t *testing.T) {
 	want := "goreach/my-svc/v2.0.1/my-svc-abc-xyz/covmeta.12345"
 	if got != want {
 		t.Errorf("defaultKey() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultKey_EmptyFields(t *testing.T) {
+	got := defaultKey("goreach", flush.Metadata{}, "covmeta.12345")
+	want := "goreach/unknown/unknown/unknown/covmeta.12345"
+	if got != want {
+		t.Errorf("defaultKey() = %q, want %q", got, want)
+	}
+}
+
+func TestStorage_Store_CancelledContext(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "covmeta.1")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var calls []uploadCall
+	s := Storage{Upload: mockUploader(&calls, nil)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := s.Store(ctx, []string{f}, flush.Metadata{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Store() error = %v, want context.Canceled", err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("got %d uploads after cancellation, want 0", len(calls))
 	}
 }

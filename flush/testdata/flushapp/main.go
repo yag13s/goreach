@@ -11,12 +11,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/yag13s/goreach/flush"
+	"github.com/yag13s/goreach/flush/flushhttp"
 )
 
 // loggingStorage stores files locally and reports each call on stdout.
@@ -49,6 +52,20 @@ type failingStorage struct{}
 
 func (failingStorage) Store(context.Context, []string, flush.Metadata) error {
 	return fmt.Errorf("storage unavailable")
+}
+
+// flakyStorage fails its first failures calls, then delegates to inner.
+type flakyStorage struct {
+	inner    flush.Storage
+	failures int
+}
+
+func (s *flakyStorage) Store(ctx context.Context, files []string, meta flush.Metadata) error {
+	if s.failures > 0 {
+		s.failures--
+		return fmt.Errorf("storage unavailable")
+	}
+	return s.inner.Store(ctx, files, meta)
 }
 
 // blockingStorage never completes a Store on its own. If honorCtx is set it
@@ -96,10 +113,13 @@ func main() {
 	case "emit":
 		// Emit before Enable and after Stop must be no-ops.
 		check(flush.Emit())
+		expectEnabled(false)
 		flush.Enable(cfg)
+		expectEnabled(true)
 		flush.Enable(flush.Config{Storage: failingStorage{}}) // ignored: already enabled
 		check(flush.Emit())
 		check(flush.Stop())
+		expectEnabled(false)
 		check(flush.Emit())
 		check(flush.Stop())
 
@@ -219,8 +239,64 @@ func main() {
 			return flush.StopContext(ctx)
 		})
 
+	case "clear-retry":
+		// With Clear, the counters are reset before Store runs, so a failed
+		// Store must not lose them: the next flush stores its files too.
+		cfg.Storage = &flakyStorage{inner: cfg.Storage, failures: 2}
+		cfg.Clear = true
+		flush.Enable(cfg)
+		for i := range 2 {
+			if err := flush.Emit(); err == nil {
+				fatalf("Emit %d succeeded, want the storage error", i)
+			}
+		}
+		check(flush.Emit())
+		check(flush.Stop())
+
+	case "http":
+		// flushhttp against real instrumentation.
+		h := flushhttp.Handler()
+		serve := func(method, path string) *httptest.ResponseRecorder {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+			return rec
+		}
+		expectStatus := func(rec *httptest.ResponseRecorder, want int, what string) {
+			if rec.Code != want {
+				fatalf("%s: status %d, want %d: %s", what, rec.Code, want, rec.Body)
+			}
+		}
+
+		expectStatus(serve("POST", "/internal/coverage/flush"), http.StatusServiceUnavailable, "flush before Enable")
+		flush.Enable(cfg)
+
+		rec := serve("GET", "/internal/coverage")
+		expectStatus(rec, http.StatusOK, "GET coverage")
+		if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" {
+			fatalf("GET coverage: Content-Type %q, want application/octet-stream", ct)
+		}
+		if rec.Body.Len() == 0 {
+			fatalf("GET coverage: empty body")
+		}
+
+		rec = serve("POST", "/internal/coverage/flush")
+		expectStatus(rec, http.StatusOK, "POST flush")
+		var resp map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp["status"] != "ok" || resp["flushed"] == "" {
+			fatalf("POST flush: unexpected body %q (%v)", rec.Body, err)
+		}
+
+		expectStatus(serve("POST", "/internal/coverage/clear"), http.StatusOK, "POST clear")
+		check(flush.Stop())
+
 	default:
 		fatalf("unknown scenario %q", scenario)
+	}
+}
+
+func expectEnabled(want bool) {
+	if got := flush.Enabled(); got != want {
+		fatalf("Enabled() = %v, want %v", got, want)
 	}
 }
 
