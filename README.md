@@ -176,12 +176,16 @@ goreach view -src . report.json
 ```
 
 `-r` finds every coverage directory under the root and groups them into builds by their
-`covmeta` hash (the directory names do not matter). The newest build is matched against the
+`covmeta` hash (the directory names do not matter). The newest build — the one whose latest
+counter file was written last, read from the `covcounters.*` file name so copying the data
+(`aws s3 sync`, `cp`) does not change it — is matched against the
 source on disk and defines the report: its functions, line numbers and statement counts.
 Older builds contribute each function's coverage percentage, matched **by function name**,
 and the report keeps the maximum per function — so no coverage is lost when you redeploy,
 and code that moved within a file between builds is still attributed correctly.
-Functions that no longer exist in the newest build are left out.
+Functions that no longer exist in the newest build are left out. Functions that share a
+name within one file (several `init` funcs, or a generic method and a function of the same
+name) cannot be told apart in an older build's data and keep the newest build's numbers.
 
 When an older build wins for a function, the report has no block-level detail from that
 build; the newest build's unreached blocks are kept in `latest_unreached_blocks`, and the

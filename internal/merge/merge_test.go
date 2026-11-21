@@ -599,3 +599,137 @@ func TestOnto_TotalsFallBackToFunctionsWhenBaseHasNone(t *testing.T) {
 		t.Errorf("total = %+v, want %+v", got, want)
 	}
 }
+
+func TestCoverName(t *testing.T) {
+	tests := map[string]string{
+		"Foo":                      "Foo",
+		"(*Server).Handle":         "(*Server).Handle",
+		"(Server).Handle":          "(Server).Handle",
+		"(*List[T]).Push":          "Push",
+		"(Pair[K, V]).Swap":        "Swap",
+		"(*Map[K, []V]).Get":       "Get",
+		"(*report.Report).Clone":   "(*report.Report).Clone",
+		"(*List[map[K]V]).Push":    "Push",
+		"(*Weird).Method).Strange": "(*Weird).Method).Strange",
+	}
+	for in, want := range tests {
+		if got := coverName(in); got != want {
+			t.Errorf("coverName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestOnto_GenericMethodMatchesCovdataName checks that an older build's
+// covdata entry for a generic method, which cmd/cover names by the bare
+// method name, is matched to the astmap name.
+func TestOnto_GenericMethodMatchesCovdataName(t *testing.T) {
+	stats := report.NewCoverageStats(0, 10)
+	base := reportWithFile(stats, report.FuncReport{
+		Name: "(*List[T]).Push", Line: 5, TotalStatements: 10, CoveragePercent: 0,
+		UnreachedBlocks: []report.UnreachedBlock{{StartLine: 6, EndLine: 8, NumStatements: 10}},
+	})
+	older := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "Push", CoveragePercent: 100})
+
+	got := findFunc(Onto(base, older), "(*List[T]).Push")
+	if got == nil || got.CoveragePercent != 100 || got.CoveredStatements != 10 {
+		t.Fatalf("got %+v, want 10/10 at 100%% from the older build", got)
+	}
+	if len(got.LatestUnreachedBlocks) != 1 {
+		t.Errorf("LatestUnreachedBlocks = %v, want the base's block", got.LatestUnreachedBlocks)
+	}
+}
+
+// TestOnto_DuplicateNamesKeepBase checks that several functions sharing a
+// name in one file (multiple init funcs) keep their own values instead of
+// all taking the best one's.
+func TestOnto_DuplicateNamesKeepBase(t *testing.T) {
+	initA := report.FuncReport{Name: "init", Line: 3, TotalStatements: 2, CoveredStatements: 0, CoveragePercent: 0,
+		UnreachedBlocks: []report.UnreachedBlock{{StartLine: 3, EndLine: 4, NumStatements: 2}}}
+	initB := report.FuncReport{Name: "init", Line: 10, TotalStatements: 10, CoveredStatements: 10, CoveragePercent: 100}
+	base := reportWithFile(report.NewCoverageStats(10, 12), initA, initB)
+	older := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "init", CoveragePercent: 100})
+
+	merged := Onto(base, older)
+	fns := merged.Packages[0].Files[0].Functions
+	if fns[0].TotalStatements != 2 || fns[0].CoveredStatements != 0 || len(fns[0].UnreachedBlocks) != 1 {
+		t.Errorf("first init = %+v, want its own 0/2 and unreached block", fns[0])
+	}
+	if fns[1].TotalStatements != 10 || fns[1].CoveredStatements != 10 {
+		t.Errorf("second init = %+v, want its own 10/10", fns[1])
+	}
+	if merged.Total.TotalStatements != 12 || merged.Total.CoveredStatements != 10 {
+		t.Errorf("total = %+v, want 10/12", merged.Total)
+	}
+}
+
+// TestOnto_RemergeKeepsLatestBlocks checks that merging onto a report that
+// is itself a merge result keeps the current-source blocks.
+func TestOnto_RemergeKeepsLatestBlocks(t *testing.T) {
+	oldBlocks := []report.UnreachedBlock{{StartLine: 100, EndLine: 101, NumStatements: 1}}
+	curBlocks := []report.UnreachedBlock{{StartLine: 6, EndLine: 7, NumStatements: 2}}
+	// A merge result where an older build won: UnreachedBlocks are from old
+	// source, LatestUnreachedBlocks from the current one.
+	merged1 := reportWithFile(report.NewCoverageStats(8, 10), report.FuncReport{
+		Name: "Foo", Line: 5, TotalStatements: 10, CoveredStatements: 8, CoveragePercent: 80,
+		UnreachedBlocks: oldBlocks, LatestUnreachedBlocks: curBlocks,
+	})
+
+	t.Run("base wins", func(t *testing.T) {
+		other := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "Foo", CoveragePercent: 50})
+		got := findFunc(Onto(merged1, other), "Foo")
+		if len(got.LatestUnreachedBlocks) != 1 || got.LatestUnreachedBlocks[0].StartLine != 6 {
+			t.Errorf("LatestUnreachedBlocks = %v, want the current-source block carried over", got.LatestUnreachedBlocks)
+		}
+	})
+	t.Run("other wins", func(t *testing.T) {
+		other := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "Foo", CoveragePercent: 90})
+		got := findFunc(Onto(merged1, other), "Foo")
+		if len(got.LatestUnreachedBlocks) != 1 || got.LatestUnreachedBlocks[0].StartLine != 6 {
+			t.Errorf("LatestUnreachedBlocks = %v, want the current-source block, not old-source lines", got.LatestUnreachedBlocks)
+		}
+	})
+}
+
+// TestOnto_GenericMethodsMatchExactlyBetweenReports checks that reports
+// carrying full names still merge generic methods one to one, even when two
+// types in a file share a method name, and that a bare covdata name which
+// could mean either of them is not applied to both.
+func TestOnto_GenericMethodsMatchExactlyBetweenReports(t *testing.T) {
+	fn := func(name string, covered int) report.FuncReport {
+		return report.FuncReport{Name: name, TotalStatements: 10, CoveredStatements: covered,
+			CoveragePercent: report.ComputePercent(covered, 10)}
+	}
+	base := reportWithFile(report.NewCoverageStats(0, 20), fn("(*List[T]).Len", 0), fn("(*Map[K, V]).Len", 0))
+	older := reportWithFile(report.NewCoverageStats(10, 20), fn("(*List[T]).Len", 10), fn("(*Map[K, V]).Len", 0))
+	covdata := reportWithFile(report.CoverageStats{}, report.FuncReport{Name: "Len", CoveragePercent: 100})
+
+	merged := Onto(base, older, covdata)
+	if got := findFunc(merged, "(*List[T]).Len"); got.CoveredStatements != 10 {
+		t.Errorf("(*List[T]).Len = %+v, want 10/10 from the older report", got)
+	}
+	if got := findFunc(merged, "(*Map[K, V]).Len"); got.CoveredStatements != 0 {
+		t.Errorf("(*Map[K, V]).Len = %+v, want 0/10: the bare name Len is ambiguous", got)
+	}
+}
+
+// TestOnto_GenericMethodNotMatchedWhenPlainFuncSharesName checks that a bare
+// covdata name is not applied to a generic method when the file also has a
+// plain function of that name.
+func TestOnto_GenericMethodNotMatchedWhenPlainFuncSharesName(t *testing.T) {
+	base := reportWithFile(report.NewCoverageStats(0, 20),
+		report.FuncReport{Name: "(*List[T]).Push", TotalStatements: 10},
+		report.FuncReport{Name: "Push", TotalStatements: 10},
+	)
+	// cmd/cover names both "Push"; which line is which cannot be told.
+	covdata := reportWithFile(report.CoverageStats{},
+		report.FuncReport{Name: "Push", CoveragePercent: 100},
+		report.FuncReport{Name: "Push", CoveragePercent: 0},
+	)
+
+	merged := Onto(base, covdata)
+	for _, name := range []string{"(*List[T]).Push", "Push"} {
+		if got := findFunc(merged, name); got.CoveredStatements != 0 || got.CoveragePercent != 0 {
+			t.Errorf("%s = %+v, want base's 0/10 kept", name, got)
+		}
+	}
+}

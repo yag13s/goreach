@@ -5,6 +5,7 @@ package merge
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/yag13s/goreach/internal/report"
@@ -14,6 +15,25 @@ import (
 type funcKey struct {
 	fileName string
 	funcName string
+}
+
+// coverName returns the name cmd/cover, and so `go tool covdata func`, gives
+// a function known to astmap as name. cmd/cover keeps a receiver only when
+// it is a plain or pointer type name, so a method on a generic type,
+// "(*List[T]).Push" in astmap form, is just "Push" there. For every other
+// function the two agree and name is returned unchanged.
+func coverName(name string) string {
+	if !strings.HasPrefix(name, "(") {
+		return name
+	}
+	i := strings.LastIndex(name, ").")
+	if i < 0 {
+		return name
+	}
+	if strings.Contains(name[1:i], "[") {
+		return name[i+2:]
+	}
+	return name
 }
 
 // funcEntry tracks the best coverage seen for a function across all reports.
@@ -69,12 +89,23 @@ func Merge(reports []*report.Report) (*report.Report, error) {
 // describes the current source.
 func Onto(base *report.Report, others ...*report.Report) *report.Report {
 	// Build a lookup of max coverage per function across all reports.
+	//
+	// A key that names more than one function in any single report (several
+	// init funcs in a file; in covdata output also a generic method and a
+	// plain func sharing a name) cannot be matched reliably; such functions
+	// keep base's values.
 	lookup := make(map[funcKey]*funcEntry)
+	ambiguous := make(map[funcKey]bool)
 	consider := func(r *report.Report, isBase bool) {
 		for _, pkg := range r.Packages {
 			for _, file := range pkg.Files {
+				seen := make(map[funcKey]bool, len(file.Functions))
 				for _, fn := range file.Functions {
 					key := funcKey{fileName: file.FileName, funcName: fn.Name}
+					if seen[key] {
+						ambiguous[key] = true
+					}
+					seen[key] = true
 					existing, ok := lookup[key]
 					if !ok || fn.CoveragePercent > existing.coveragePercent ||
 						(fn.CoveragePercent == existing.coveragePercent && isBase) {
@@ -113,9 +144,30 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 				FileName:  file.FileName,
 				Functions: make([]report.FuncReport, len(file.Functions)),
 			}
+			// How many of the file's functions cmd/cover knows by each name.
+			coverNames := make(map[string]int, len(file.Functions))
+			for _, fn := range file.Functions {
+				coverNames[coverName(fn.Name)]++
+			}
 			for k, fn := range file.Functions {
 				key := funcKey{fileName: file.FileName, funcName: fn.Name}
-				if best, ok := lookup[key]; ok {
+				// The blocks for the current source: a base that is itself a
+				// merge result keeps them in LatestUnreachedBlocks when an
+				// older build had won.
+				current := fn.UnreachedBlocks
+				if len(fn.LatestUnreachedBlocks) > 0 {
+					current = fn.LatestUnreachedBlocks
+				}
+				if best, ok := lookup[key]; ok && !ambiguous[key] {
+					// An older build's covdata output lists a generic method
+					// under its bare name. Use that entry if it is better,
+					// unless the bare name could mean another function too.
+					if cn := coverName(fn.Name); cn != fn.Name && coverNames[cn] == 1 {
+						ck := funcKey{fileName: file.FileName, funcName: cn}
+						if alt, found := lookup[ck]; found && !ambiguous[ck] && alt.coveragePercent > best.coveragePercent {
+							best = alt
+						}
+					}
 					mf.Functions[k] = report.FuncReport{
 						Name:              fn.Name,
 						Line:              fn.Line, // always use base (current source) line
@@ -128,8 +180,10 @@ func Onto(base *report.Report, others ...*report.Report) *report.Report {
 					// have line numbers from the old source. Preserve the base
 					// (latest build) blocks so the viewer can show a toggle
 					// between merged coverage and current-source blocks.
-					if !best.fromBase && len(fn.UnreachedBlocks) > 0 {
-						mf.Functions[k].LatestUnreachedBlocks = fn.UnreachedBlocks
+					if best.fromBase {
+						mf.Functions[k].LatestUnreachedBlocks = fn.LatestUnreachedBlocks
+					} else if len(current) > 0 {
+						mf.Functions[k].LatestUnreachedBlocks = current
 					}
 					// Statement counts always describe the base (current)
 					// source: an older build's counts are for code that may

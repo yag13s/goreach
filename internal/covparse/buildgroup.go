@@ -1,6 +1,7 @@
 package covparse
 
 import (
+	"cmp"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +20,7 @@ import (
 // covmeta hash set (i.e. they were produced by the same build).
 type BuildGroup struct {
 	Dirs            []string
-	NewestTimestamp time.Time // newest covcounters file ModTime in the group
+	NewestTimestamp time.Time // when the group's newest covcounters file was written
 }
 
 // Profiles merges the group's coverage directories and returns their profiles.
@@ -28,7 +30,8 @@ func (g BuildGroup) Profiles() ([]*cover.Profile, error) {
 
 // FindBuildGroups walks dir recursively, groups coverage directories by
 // covmeta hash, and returns BuildGroups sorted by newest covcounters timestamp
-// ascending (last element = newest build).
+// ascending (last element = newest build). Groups with equal timestamps are
+// ordered by directory so the choice of newest build is deterministic.
 func FindBuildGroups(dir string) ([]BuildGroup, error) {
 	covDirs, err := findCoverageDirs(dir)
 	if err != nil {
@@ -53,14 +56,22 @@ func FindBuildGroups(dir string) ([]BuildGroup, error) {
 	}
 
 	slices.SortFunc(groups, func(a, b BuildGroup) int {
-		return a.NewestTimestamp.Compare(b.NewestTimestamp)
+		return cmp.Or(
+			a.NewestTimestamp.Compare(b.NewestTimestamp),
+			slices.Compare(a.Dirs, b.Dirs),
+		)
 	})
 
 	return groups, nil
 }
 
-// newestCounterTime returns the most recent ModTime of covcounters.* files
-// across the given directories.
+// newestCounterTime returns when the most recent covcounters.* file across
+// the given directories was written.
+//
+// The runtime names counter files covcounters.<hash>.<pid>.<unixnano>, so the
+// write time is read from the name; copying the data around (cp, aws s3 sync)
+// changes ModTime but not the name. ModTime is the fallback for names that do
+// not follow that pattern.
 func newestCounterTime(dirs []string) (time.Time, error) {
 	var newest time.Time
 	for _, dir := range dirs {
@@ -72,16 +83,34 @@ func newestCounterTime(dirs []string) (time.Time, error) {
 			if !strings.HasPrefix(e.Name(), "covcounters.") {
 				continue
 			}
-			info, err := e.Info()
-			if err != nil {
-				return time.Time{}, fmt.Errorf("covparse: stat %s/%s: %w", dir, e.Name(), err)
+			t, ok := counterFileTime(e.Name())
+			if !ok {
+				info, err := e.Info()
+				if err != nil {
+					return time.Time{}, fmt.Errorf("covparse: stat %s/%s: %w", dir, e.Name(), err)
+				}
+				t = info.ModTime()
 			}
-			if info.ModTime().After(newest) {
-				newest = info.ModTime()
+			if t.After(newest) {
+				newest = t
 			}
 		}
 	}
 	return newest, nil
+}
+
+// counterFileTime extracts the write time from a counter file name of the
+// form covcounters.<hash>.<pid>.<unixnano>.
+func counterFileTime(name string) (time.Time, bool) {
+	parts := strings.Split(name, ".")
+	if len(parts) != 4 || parts[0] != "covcounters" {
+		return time.Time{}, false
+	}
+	ns, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil || ns <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(0, ns), true
 }
 
 // findCoverageDirs walks root and returns directories that contain coverage data files.

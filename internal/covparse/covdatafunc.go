@@ -33,7 +33,12 @@ func parseCovdataFuncOutput(output string) []FuncCoverage {
 	var result []FuncCoverage
 	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "total") {
+		if line == "" {
+			continue
+		}
+		// Skip only the summary line itself: a module path may start with
+		// "total" too (totally.dev/x/file.go:...).
+		if f := strings.Fields(line); len(f) >= 2 && f[0] == "total" && f[1] == "(statements)" {
 			continue
 		}
 
