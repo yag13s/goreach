@@ -54,7 +54,6 @@ func Serve(reportPath string, opts Options) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 
-	port := ln.Addr().(*net.TCPAddr).Port
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", handleIndex)
 	mux.Handle("GET /api/report", makeReportHandler(data))
@@ -72,7 +71,7 @@ func Serve(reportPath string, opts Options) error {
 	}
 
 	srv := &http.Server{
-		Handler:      requireLocalHost(port, mux),
+		Handler:      requireLocalHost(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -102,18 +101,20 @@ func Serve(reportPath string, opts Options) error {
 	return nil
 }
 
-// requireLocalHost rejects requests whose Host header is not this server's
-// loopback address. Binding to 127.0.0.1 keeps other machines out, but a web
-// page can still reach the server through DNS rebinding (a hostname that
-// resolves to 127.0.0.1); its requests carry that hostname, not ours.
-func requireLocalHost(port int, next http.Handler) http.Handler {
-	allowed := map[string]bool{
-		fmt.Sprintf("127.0.0.1:%d", port): true,
-		fmt.Sprintf("localhost:%d", port): true,
-	}
+// requireLocalHost rejects requests whose Host header does not name the
+// loopback interface. Binding to 127.0.0.1 keeps other machines out, but a
+// web page can still reach the server through DNS rebinding (a hostname that
+// resolves to 127.0.0.1); its requests carry that hostname, not a loopback
+// one. The port is not checked, so the viewer stays reachable through a
+// forwarded port (ssh -L 9000:localhost:8080).
+func requireLocalHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !allowed[r.Host] {
-			http.Error(w, "forbidden host", http.StatusForbidden)
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			http.Error(w, "goreach view only answers requests addressed to localhost or 127.0.0.1", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

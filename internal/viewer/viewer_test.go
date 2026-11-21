@@ -457,15 +457,18 @@ func TestMakeSourceHandler_LatestUnreached(t *testing.T) {
 }
 
 func TestRequireLocalHost(t *testing.T) {
-	h := requireLocalHost(8080, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := requireLocalHost(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	for host, want := range map[string]int{
-		"127.0.0.1:8080":    http.StatusOK,
-		"localhost:8080":    http.StatusOK,
-		"127.0.0.1:9999":    http.StatusForbidden,
-		"evil.example:8080": http.StatusForbidden, // DNS rebinding
-		"":                  http.StatusForbidden,
+		"127.0.0.1:8080":              http.StatusOK,
+		"localhost:8080":              http.StatusOK,
+		"localhost:9000":              http.StatusOK, // forwarded port
+		"localhost":                   http.StatusOK,
+		"[::1]:8080":                  http.StatusOK,
+		"evil.example:8080":           http.StatusForbidden, // DNS rebinding
+		"127.0.0.1.evil.example:8080": http.StatusForbidden,
+		"":                            http.StatusForbidden,
 	} {
 		req := httptest.NewRequest("GET", "/api/report", nil)
 		req.Host = host
