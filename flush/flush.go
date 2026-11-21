@@ -1,20 +1,24 @@
 package flush
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime/coverage"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Config configures the coverage flush behavior.
 type Config struct {
-	// Storage is the destination for coverage data. If nil, LocalStorage using
-	// GOCOVERDIR environment variable is used as a fallback.
+	// Storage is the destination for coverage data. If nil, LocalStorage
+	// writing to $GOCOVERDIR is used, or to $TMPDIR/goreach-coverage when
+	// GOCOVERDIR is unset.
 	Storage Storage
 
 	// ServiceName identifies the service producing coverage data.
@@ -28,6 +32,11 @@ type Config struct {
 	Interval time.Duration
 
 	// Clear resets coverage counters after each flush (atomic mode only).
+	//
+	// Counters are reset as soon as they have been written to a temporary
+	// directory, before Storage.Store runs, so hits recorded during a slow
+	// upload are kept for the next flush. The flip side is that if Store
+	// fails, the counts from that interval are lost.
 	Clear bool
 
 	// FlushTimeout bounds each flush that is not given a context of its own:
@@ -166,6 +175,10 @@ func EmitContext(ctx context.Context) error {
 // HandleSignal registers signal-based flush triggers.
 // When any of the specified signals is received, a flush is performed.
 // Calling HandleSignal again replaces the previous signal handler.
+//
+// Like [signal.Notify], this replaces the signal's default action: passing
+// SIGTERM or SIGINT makes the process flush instead of exiting. Use a signal
+// such as SIGUSR1, or handle shutdown yourself and call [Stop].
 func HandleSignal(sigs ...os.Signal) {
 	s := current()
 	if s == nil {
@@ -174,6 +187,14 @@ func HandleSignal(sigs ...os.Signal) {
 
 	s.sigMu.Lock()
 	defer s.sigMu.Unlock()
+
+	// Stop may have run between current() and taking sigMu. Registering now
+	// would capture the signals with nobody left to receive them.
+	select {
+	case <-s.stopCh:
+		return
+	default:
+	}
 
 	// Clean up previous signal handler if any.
 	if s.sigCh != nil {
@@ -199,6 +220,12 @@ func HandleSignal(sigs ...os.Signal) {
 			}
 		}
 	}()
+}
+
+// Enabled reports whether flushing is enabled, i.e. [Enable] has been called
+// in a binary built with -cover and [Stop] has not been called since.
+func Enabled() bool {
+	return current() != nil
 }
 
 // current returns the active state, or nil if flushing is not enabled.
@@ -309,6 +336,14 @@ func (s *flushState) doFlush(ctx context.Context) error {
 		return fmt.Errorf("goreach/flush: write counters: %w", err)
 	}
 
+	// Clear before the (possibly slow) Store so hits recorded during the
+	// upload are not wiped out. See Config.Clear.
+	if s.cfg.Clear {
+		if err := coverage.ClearCounters(); err != nil {
+			return fmt.Errorf("goreach/flush: clear counters: %w", err)
+		}
+	}
+
 	// Collect files written
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil {
@@ -323,18 +358,24 @@ func (s *flushState) doFlush(ctx context.Context) error {
 	if len(files) == 0 {
 		return nil
 	}
+	// Hand over meta files first: ReadDir sorts covcounters.* before covmeta.*,
+	// and a Store that fails part way should not leave counters without meta.
+	slices.SortStableFunc(files, func(a, b string) int {
+		return cmp.Compare(metaRank(a), metaRank(b))
+	})
 
 	if err := s.cfg.Storage.Store(ctx, files, newMetadata(s.cfg)); err != nil {
 		return fmt.Errorf("goreach/flush: store: %w", err)
 	}
-
-	if s.cfg.Clear {
-		if err := coverage.ClearCounters(); err != nil {
-			return fmt.Errorf("goreach/flush: clear counters: %w", err)
-		}
-	}
-
 	return nil
+}
+
+// metaRank orders covmeta files before everything else.
+func metaRank(path string) int {
+	if strings.HasPrefix(filepath.Base(path), "covmeta.") {
+		return 0
+	}
+	return 1
 }
 
 // newMetadata describes a flush happening now in this process.

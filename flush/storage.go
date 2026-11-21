@@ -73,6 +73,9 @@ func (s WriterStorage) Store(_ context.Context, files []string, meta Metadata) e
 	return nil
 }
 
+// copyFile copies src to dst atomically: it writes a temporary file next to
+// dst and renames it into place, so a failed copy never leaves a truncated
+// file and a concurrent reader (goreach analyze) never sees a partial one.
 func copyFile(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -80,16 +83,27 @@ func copyFile(src, dst string) (err error) {
 	}
 	defer in.Close()
 
-	out, err := os.Create(dst)
+	out, err := os.CreateTemp(filepath.Dir(dst), ".goreach-tmp-*")
 	if err != nil {
 		return err
 	}
+	tmp := out.Name()
 	defer func() {
-		if cerr := out.Close(); err == nil {
-			err = cerr
+		if err != nil {
+			_ = os.Remove(tmp)
 		}
 	}()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err = out.Close(); err != nil {
+		return err
+	}
+	// CreateTemp uses 0600; match what os.Create would have produced.
+	if err = os.Chmod(tmp, 0o644); err != nil { //nolint:gosec // coverage data is not secret; match os.Create
+		return err
+	}
+	return os.Rename(tmp, dst)
 }

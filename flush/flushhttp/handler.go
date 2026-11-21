@@ -5,6 +5,7 @@
 package flushhttp
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,10 +18,15 @@ import (
 
 // Handler returns an http.Handler that exposes coverage data endpoints.
 //
+// The endpoints are unauthenticated, and /flush and /clear change state.
+// Serve them only on an internal listener, or wrap the handler with your own
+// authentication; never expose them to the public internet.
+//
 // Endpoints:
 //
 //	GET  /internal/coverage       — returns current coverage counters as binary data
 //	POST /internal/coverage/flush — flushes to Storage, then returns status
+//	                                (503 if flush.Enable has not been called)
 //	POST /internal/coverage/clear — resets coverage counters (atomic mode only)
 func Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -31,15 +37,23 @@ func Handler() http.Handler {
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if err := coverage.WriteCounters(w); err != nil {
+	// Buffer first so a failure can still be reported as a 500 instead of a
+	// 200 with a truncated body.
+	var buf bytes.Buffer
+	if err := coverage.WriteCounters(&buf); err != nil {
 		http.Error(w, fmt.Sprintf("goreach: write counters: %v", err), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(buf.Bytes())
 }
 
 func handleFlush(w http.ResponseWriter, r *http.Request) {
-	if err := flush.Emit(); err != nil {
+	if !flush.Enabled() {
+		http.Error(w, "goreach: flush is not enabled (call flush.Enable in a binary built with -cover)", http.StatusServiceUnavailable)
+		return
+	}
+	if err := flush.EmitContext(r.Context()); err != nil {
 		http.Error(w, fmt.Sprintf("goreach: flush failed: %v", err), http.StatusInternalServerError)
 		return
 	}

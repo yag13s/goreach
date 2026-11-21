@@ -279,7 +279,7 @@ Safe to call on binaries built without `-cover` -- all flush operations become n
 | Periodic | Long-running servers | `Config{Interval: 5 * time.Minute}` |
 | Manual | Lambda, request-scoped | `flush.Emit()` / `flush.EmitContext(ctx)` |
 | HTTP | CronJob, external trigger | `flushhttp.Handler()` |
-| Signal | Batch jobs, non-HTTP processes | `flush.HandleSignal(syscall.SIGUSR1)` |
+| Signal | Batch jobs, non-HTTP processes | `flush.HandleSignal(syscall.SIGUSR1)` (replaces the signal's default action, so avoid SIGTERM/SIGINT) |
 | Shutdown | All processes | `defer flush.Stop()` / `flush.StopContext(ctx)` |
 
 ### Timeouts
@@ -345,8 +345,11 @@ mux.Handle("/internal/coverage/", flushhttp.Handler())
 | Method | Path | Action |
 |--------|------|--------|
 | `GET` | `/internal/coverage` | Return current coverage data |
-| `POST` | `/internal/coverage/flush` | Flush to storage |
+| `POST` | `/internal/coverage/flush` | Flush to storage (`503` if `flush.Enable` has not been called) |
 | `POST` | `/internal/coverage/clear` | Reset counters |
+
+> [!WARNING]
+> These endpoints are unauthenticated, and `flush` / `clear` change state. Serve them on an internal-only listener or wrap the handler with your own auth; never expose them publicly.
 
 ## Architecture
 

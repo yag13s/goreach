@@ -49,6 +49,9 @@ func (s *Storage) Store(ctx context.Context, files []string, meta flush.Metadata
 	}
 
 	for _, f := range files {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("goreach/flush: upload %s: %w", filepath.Base(f), err)
+		}
 		body, err := os.Open(f)
 		if err != nil {
 			return fmt.Errorf("goreach/flush: open %s: %w", filepath.Base(f), err)
@@ -69,7 +72,15 @@ func (s *Storage) Store(ctx context.Context, files []string, meta flush.Metadata
 }
 
 // defaultKey produces keys in the form: <prefix>/<service>/<version>/<pod>/<filename>.
+// Empty segments become "unknown" so keys never contain "//".
 func defaultKey(prefix string, meta flush.Metadata, filename string) string {
 	return fmt.Sprintf("%s/%s/%s/%s/%s",
-		prefix, meta.ServiceName, meta.BuildVersion, meta.PodName, filename)
+		prefix, orUnknown(meta.ServiceName), orUnknown(meta.BuildVersion), orUnknown(meta.PodName), filename)
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }

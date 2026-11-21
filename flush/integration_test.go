@@ -141,6 +141,9 @@ func TestIntegration_EmitAndStop(t *testing.T) {
 	}
 	hostname, _ := os.Hostname()
 	for i, c := range calls {
+		if len(c.Files) == 0 || !strings.HasPrefix(c.Files[0], "covmeta.") {
+			t.Errorf("call %d: files = %v, want covmeta first", i, c.Files)
+		}
 		if c.Service != "flushapp" || c.Version != "v1" {
 			t.Errorf("call %d: service/version = %q/%q, want flushapp/v1 (second Enable must be ignored)", i, c.Service, c.Version)
 		}
@@ -153,6 +156,15 @@ func TestIntegration_EmitAndStop(t *testing.T) {
 		if c.Pod != hostname {
 			t.Errorf("call %d: pod = %q, want hostname %q when POD_NAME is empty", i, c.Pod, hostname)
 		}
+	}
+	requireCoverageData(t, dir)
+}
+
+func TestIntegration_HTTPHandler(t *testing.T) {
+	dir, calls, _ := runApp(t, "http")
+	// POST /flush plus the final flush in Stop; the flush before Enable is a 503.
+	if len(calls) != 2 {
+		t.Fatalf("got %d Store calls, want 2: %+v", len(calls), calls)
 	}
 	requireCoverageData(t, dir)
 }
