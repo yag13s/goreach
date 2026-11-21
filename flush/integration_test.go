@@ -160,6 +160,29 @@ func TestIntegration_EmitAndStop(t *testing.T) {
 	requireCoverageData(t, dir)
 }
 
+func TestIntegration_ClearRetriesFailedFlush(t *testing.T) {
+	dir, calls, _ := runApp(t, "clear-retry")
+	// Two failed Emits (not reported), one that succeeds, and Stop.
+	if len(calls) != 2 {
+		t.Fatalf("got %d Store calls, want 2: %+v", len(calls), calls)
+	}
+	counters := func(c storeCall) (n int) {
+		for _, f := range c.Files {
+			if strings.HasPrefix(f, "covcounters.") {
+				n++
+			}
+		}
+		return n
+	}
+	if got := counters(calls[0]); got != 3 {
+		t.Errorf("first successful Store got %d counter files, want 3 (its own and the two failed flushes'): %v", got, calls[0].Files)
+	}
+	if got := counters(calls[1]); got != 1 {
+		t.Errorf("Store after the retry got %d counter files, want 1 (pending files must not be sent twice): %v", got, calls[1].Files)
+	}
+	requireCoverageData(t, dir)
+}
+
 func TestIntegration_HTTPHandler(t *testing.T) {
 	dir, calls, _ := runApp(t, "http")
 	// POST /flush plus the final flush in Stop; the flush before Enable is a 503.

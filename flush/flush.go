@@ -35,8 +35,10 @@ type Config struct {
 	//
 	// Counters are reset as soon as they have been written to a temporary
 	// directory, before Storage.Store runs, so hits recorded during a slow
-	// upload are kept for the next flush. The flip side is that if Store
-	// fails, the counts from that interval are lost.
+	// upload are kept for the next flush. If Store fails, the counter files
+	// it was given are kept and handed to the next flush as well (up to
+	// maxPendingFiles of them), so a failed or timed-out upload loses
+	// nothing as long as a later flush succeeds.
 	Clear bool
 
 	// FlushTimeout bounds each flush that is not given a context of its own:
@@ -68,6 +70,11 @@ type flushState struct {
 	// It is a channel rather than a mutex so that waiting for it can be
 	// abandoned when the caller's context is done.
 	flushSem chan struct{}
+
+	// Counter files of failed flushes awaiting retry (Config.Clear only),
+	// oldest first, all inside pendingDir. Guarded by flushSem.
+	pendingDir string
+	pending    []string
 
 	sigMu     sync.Mutex
 	sigCh     chan os.Signal
@@ -275,7 +282,17 @@ func (s *flushState) stop(ctx context.Context) error {
 	}
 
 	// Final flush
-	return s.doFlush(ctx)
+	err := s.doFlush(ctx)
+
+	// Nothing will retry after this. Skip the cleanup if a hung flush still
+	// holds the lock: it owns the pending files.
+	select {
+	case s.flushSem <- struct{}{}:
+		s.discardPending()
+		<-s.flushSem
+	default:
+	}
+	return err
 }
 
 func (s *flushState) periodicFlush() {
@@ -337,10 +354,12 @@ func (s *flushState) doFlush(ctx context.Context) error {
 	}
 
 	// Clear before the (possibly slow) Store so hits recorded during the
-	// upload are not wiped out. See Config.Clear.
+	// upload are not wiped out. See Config.Clear. A failure to clear must
+	// not keep what was just written from being stored.
+	var clearErr error
 	if s.cfg.Clear {
 		if err := coverage.ClearCounters(); err != nil {
-			return fmt.Errorf("goreach/flush: clear counters: %w", err)
+			clearErr = fmt.Errorf("goreach/flush: clear counters: %w", err)
 		}
 	}
 
@@ -364,10 +383,58 @@ func (s *flushState) doFlush(ctx context.Context) error {
 		return cmp.Compare(metaRank(a), metaRank(b))
 	})
 
+	fresh := len(files)
+	files = append(files, s.pending...)
+
 	if err := s.cfg.Storage.Store(ctx, files, newMetadata(s.cfg)); err != nil {
+		if s.cfg.Clear && clearErr == nil {
+			// The counters were reset, so these files are the only copy.
+			s.keepForRetry(files[:fresh])
+		}
 		return fmt.Errorf("goreach/flush: store: %w", err)
 	}
-	return nil
+	s.discardPending()
+	return clearErr
+}
+
+// maxPendingFiles bounds how many counter files of failed flushes are kept
+// for retry, so a Storage that is down for good cannot fill the disk.
+const maxPendingFiles = 64
+
+// keepForRetry moves the counter files among files out of the flush's
+// temporary directory so the next flush can store them. Meta files are not
+// kept: every flush writes them afresh. The caller holds flushSem.
+func (s *flushState) keepForRetry(files []string) {
+	if s.pendingDir == "" {
+		dir, err := os.MkdirTemp("", "goreach-pending-*")
+		if err != nil {
+			return
+		}
+		s.pendingDir = dir
+	}
+	for _, f := range files {
+		if metaRank(f) == 0 {
+			continue
+		}
+		kept := filepath.Join(s.pendingDir, filepath.Base(f))
+		if os.Rename(f, kept) == nil {
+			s.pending = append(s.pending, kept)
+		}
+	}
+	for len(s.pending) > maxPendingFiles {
+		_ = os.Remove(s.pending[0])
+		s.pending = s.pending[1:]
+	}
+}
+
+// discardPending forgets the files kept for retry, once they have been
+// stored or nothing will retry them. The caller holds flushSem.
+func (s *flushState) discardPending() {
+	if s.pendingDir == "" {
+		return
+	}
+	_ = os.RemoveAll(s.pendingDir)
+	s.pendingDir, s.pending = "", nil
 }
 
 // metaRank orders covmeta files before everything else.

@@ -54,6 +54,20 @@ func (failingStorage) Store(context.Context, []string, flush.Metadata) error {
 	return fmt.Errorf("storage unavailable")
 }
 
+// flakyStorage fails its first failures calls, then delegates to inner.
+type flakyStorage struct {
+	inner    flush.Storage
+	failures int
+}
+
+func (s *flakyStorage) Store(ctx context.Context, files []string, meta flush.Metadata) error {
+	if s.failures > 0 {
+		s.failures--
+		return fmt.Errorf("storage unavailable")
+	}
+	return s.inner.Store(ctx, files, meta)
+}
+
 // blockingStorage never completes a Store on its own. If honorCtx is set it
 // returns when the context is done, like an upload that respects
 // cancellation; otherwise it hangs for good, like one that does not.
@@ -224,6 +238,20 @@ func main() {
 			defer cancel()
 			return flush.StopContext(ctx)
 		})
+
+	case "clear-retry":
+		// With Clear, the counters are reset before Store runs, so a failed
+		// Store must not lose them: the next flush stores its files too.
+		cfg.Storage = &flakyStorage{inner: cfg.Storage, failures: 2}
+		cfg.Clear = true
+		flush.Enable(cfg)
+		for i := range 2 {
+			if err := flush.Emit(); err == nil {
+				fatalf("Emit %d succeeded, want the storage error", i)
+			}
+		}
+		check(flush.Emit())
+		check(flush.Stop())
 
 	case "http":
 		// flushhttp against real instrumentation.

@@ -53,7 +53,10 @@ func handleFlush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "goreach: flush is not enabled (call flush.Enable in a binary built with -cover)", http.StatusServiceUnavailable)
 		return
 	}
-	if err := flush.EmitContext(r.Context()); err != nil {
+	// Emit rather than EmitContext(r.Context()): the flush is bounded by
+	// Config.FlushTimeout, and a client that hangs up should not abort an
+	// upload that is already under way.
+	if err := flush.Emit(); err != nil {
 		http.Error(w, fmt.Sprintf("goreach: flush failed: %v", err), http.StatusInternalServerError)
 		return
 	}

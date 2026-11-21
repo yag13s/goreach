@@ -2,6 +2,7 @@ package flush
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
@@ -11,8 +12,11 @@ import (
 
 // Storage abstracts the destination for coverage data files.
 type Storage interface {
-	// Store saves coverage files (covmeta + covcounters) from a temporary directory.
-	// files is a list of file paths within the temp directory.
+	// Store saves coverage files (covmeta + covcounters). files are paths to
+	// temporary files that are removed once Store returns; they need not
+	// share a directory, and each is to be stored under its base name. With
+	// Config.Clear, counter files of earlier flushes whose Store failed are
+	// included again, so storing a file must be safe to repeat.
 	Store(ctx context.Context, files []string, meta Metadata) error
 }
 
@@ -83,11 +87,14 @@ func copyFile(src, dst string) (err error) {
 	}
 	defer in.Close()
 
-	out, err := os.CreateTemp(filepath.Dir(dst), ".goreach-tmp-*")
+	// O_EXCL with mode 0666 rather than os.CreateTemp, which would create the
+	// file 0600: the result should get the permissions os.Create gives it,
+	// umask applied.
+	tmp := filepath.Join(filepath.Dir(dst), ".goreach-tmp-"+rand.Text())
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666) //nolint:gosec // same mode as os.Create; the umask decides
 	if err != nil {
 		return err
 	}
-	tmp := out.Name()
 	defer func() {
 		if err != nil {
 			_ = os.Remove(tmp)
@@ -99,10 +106,6 @@ func copyFile(src, dst string) (err error) {
 		return err
 	}
 	if err = out.Close(); err != nil {
-		return err
-	}
-	// CreateTemp uses 0600; match what os.Create would have produced.
-	if err = os.Chmod(tmp, 0o644); err != nil { //nolint:gosec // coverage data is not secret; match os.Create
 		return err
 	}
 	return os.Rename(tmp, dst)

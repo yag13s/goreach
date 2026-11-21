@@ -327,11 +327,22 @@ func TestCopyFile_Permissions(t *testing.T) {
 	if err := copyFile(src, dst); err != nil {
 		t.Fatal(err)
 	}
+	// Whatever os.Create gives a new file under the current umask.
+	ref := filepath.Join(t.TempDir(), "ref")
+	f, err := os.Create(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	want, err := os.Stat(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fi, err := os.Stat(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fi.Mode().Perm(); got != 0o644 {
-		t.Errorf("mode = %v, want 0644", got)
+	if fi.Mode().Perm() != want.Mode().Perm() {
+		t.Errorf("mode = %v, want %v as os.Create would give", fi.Mode().Perm(), want.Mode().Perm())
 	}
 }
