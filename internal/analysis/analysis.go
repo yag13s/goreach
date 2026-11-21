@@ -34,8 +34,14 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 	// Group profiles by package (directory)
 	pkgFiles := groupByPackage(profiles)
 
-	// Sort package import paths for deterministic output
-	importPaths := slices.Sorted(maps.Keys(pkgFiles))
+	// Sort package import paths for deterministic output, dropping packages
+	// the filter excludes before asking go list about them.
+	var importPaths []string
+	for _, p := range slices.Sorted(maps.Keys(pkgFiles)) {
+		if matchesPrefixes(p, opts.PkgPrefixes) {
+			importPaths = append(importPaths, p)
+		}
+	}
 
 	// Resolve package import paths to disk paths
 	pkgPaths, err := resolvePackages(importPaths)
@@ -48,10 +54,6 @@ func Run(profiles []*cover.Profile, opts Options) (*report.Report, error) {
 
 	for _, importPath := range importPaths {
 		profs := pkgFiles[importPath]
-		if !matchesPrefixes(importPath, opts.PkgPrefixes) {
-			continue
-		}
-
 		diskDir, ok := pkgPaths[importPath]
 		if !ok {
 			fmt.Fprintf(os.Stderr, "goreach: warning: package %s not found by go list, skipping\n", importPath)
@@ -220,12 +222,19 @@ func packageFromFile(filename string) string {
 }
 
 // resolvePackages uses `go list -json` to map import paths to disk directories.
+//
+// Packages go list cannot locate (deleted since the build, say) are left out
+// of the result so the rest can still be analyzed. If none can be located,
+// analyze is most likely running outside the module the coverage came from;
+// that is an error carrying go list's explanation.
 func resolvePackages(importPaths []string) (map[string]string, error) {
 	if len(importPaths) == 0 {
 		return nil, nil
 	}
 
-	args := append([]string{"list", "-json"}, importPaths...)
+	// -e reports unresolvable packages as entries with Error set instead of
+	// exiting non-zero for the whole list.
+	args := append([]string{"list", "-e", "-json"}, importPaths...)
 	cmd := exec.Command("go", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -235,12 +244,16 @@ func resolvePackages(importPaths []string) (map[string]string, error) {
 	}
 
 	result := make(map[string]string)
+	var firstErr string
 	// go list prints one JSON object per package, back to back.
 	dec := jsontext.NewDecoder(bytes.NewReader(out))
 	for {
 		var pkg struct {
 			ImportPath string `json:"ImportPath"`
 			Dir        string `json:"Dir"`
+			Error      *struct {
+				Err string `json:"Err"`
+			} `json:"Error"`
 		}
 		err := json.UnmarshalDecode(dec, &pkg)
 		if errors.Is(err, io.EOF) {
@@ -249,7 +262,15 @@ func resolvePackages(importPaths []string) (map[string]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("analysis: decode go list output: %w", err)
 		}
-		result[pkg.ImportPath] = pkg.Dir
+		if pkg.Dir != "" {
+			result[pkg.ImportPath] = pkg.Dir
+		} else if pkg.Error != nil && firstErr == "" {
+			firstErr = pkg.ImportPath + ": " + pkg.Error.Err
+		}
+	}
+	if len(result) == 0 && firstErr != "" {
+		return nil, fmt.Errorf("analysis: go list found none of the %d packages in the coverage data "+
+			"(run analyze from the module the coverage came from): %s", len(importPaths), firstErr)
 	}
 	return result, nil
 }

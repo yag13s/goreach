@@ -80,3 +80,11 @@ func TestParseCovdataFuncOutput_TotalOnly(t *testing.T) {
 		t.Errorf("expected 0 functions for total-only output, got %d", len(funcs))
 	}
 }
+
+func TestParseCovdataFuncOutput_ModuleStartingWithTotal(t *testing.T) {
+	out := "totally.dev/x/a.go:3:\t\tRun\t\t50.0%\ntotal\t\t\t\t(statements)\t50.0%\n"
+	funcs := parseCovdataFuncOutput(out)
+	if len(funcs) != 1 || funcs[0].FileName != "totally.dev/x/a.go" || funcs[0].FuncName != "Run" {
+		t.Errorf("got %+v, want one Run in totally.dev/x/a.go", funcs)
+	}
+}

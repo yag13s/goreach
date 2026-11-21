@@ -1,6 +1,7 @@
 package covparse
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -295,5 +296,79 @@ func TestFindBuildGroups_Ordering(t *testing.T) {
 	// Verify build B is last (has dirB)
 	if groups[1].Dirs[0] != dirB {
 		t.Errorf("expected second group to contain %s, got %v", dirB, groups[1].Dirs)
+	}
+}
+
+// TestNewestCounterTime_PrefersNameOverModTime checks that the write time
+// embedded in a runtime-named counter file wins over its ModTime, which a
+// copy (cp, aws s3 sync) can change.
+func TestNewestCounterTime_PrefersNameOverModTime(t *testing.T) {
+	dir := t.TempDir()
+	written := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	name := fmt.Sprintf("covcounters.0123456789abcdef0123456789abcdef.42.%d", written.UnixNano())
+	f := filepath.Join(dir, name)
+	if err := os.WriteFile(f, []byte("c"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	copied := time.Now() // as if downloaded just now
+	if err := os.Chtimes(f, copied, copied); err != nil {
+		t.Fatal(err)
+	}
+
+	ts, err := newestCounterTime([]string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ts.Equal(written) {
+		t.Errorf("newest time = %v, want %v from the file name", ts, written)
+	}
+}
+
+func TestCounterFileTime(t *testing.T) {
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{"covcounters.abc.42.1700000000000000000", true},
+		{"covcounters.abc", false},
+		{"covcounters.abc.42.notanumber", false},
+		{"covmeta.abc.42.1700000000000000000", false},
+	}
+	for _, tt := range tests {
+		if _, ok := counterFileTime(tt.name); ok != tt.ok {
+			t.Errorf("counterFileTime(%q) ok = %v, want %v", tt.name, ok, tt.ok)
+		}
+	}
+}
+
+// TestFindBuildGroups_TieIsDeterministic checks that builds with equal
+// timestamps are always ordered the same way.
+func TestFindBuildGroups_TieIsDeterministic(t *testing.T) {
+	root := t.TempDir()
+	same := time.Now().Add(-time.Hour)
+	for _, b := range []string{"build-b", "build-a", "build-c"} {
+		d := filepath.Join(root, b)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "covmeta."+b), []byte("m"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		c := filepath.Join(d, "covcounters."+b)
+		if err := os.WriteFile(c, []byte("c"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(c, same, same); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 10 {
+		groups, err := FindBuildGroups(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := filepath.Base(groups[len(groups)-1].Dirs[0]); got != "build-c" {
+			t.Fatalf("newest build = %s, want build-c (ties ordered by directory)", got)
+		}
 	}
 }

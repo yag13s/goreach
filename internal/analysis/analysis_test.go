@@ -444,3 +444,19 @@ func TestResolvePackages_ErrorIncludesGoListOutput(t *testing.T) {
 		t.Errorf("error should carry go list's message naming %s, got: %v", pkg, err)
 	}
 }
+
+// TestResolvePackages_SkipsMissingPackages checks that one package go list
+// cannot find (deleted since the build) does not abort the others.
+func TestResolvePackages_SkipsMissingPackages(t *testing.T) {
+	const real = "github.com/yag13s/goreach/internal/report"
+	got, err := resolvePackages([]string{real, "github.com/yag13s/goreach/internal/deleted"})
+	if err != nil {
+		t.Fatalf("resolvePackages: %v", err)
+	}
+	if got[real] == "" {
+		t.Errorf("%s not resolved: %v", real, got)
+	}
+	if len(got) != 1 {
+		t.Errorf("got %d packages, want 1: %v", len(got), got)
+	}
+}
