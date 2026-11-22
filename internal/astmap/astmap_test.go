@@ -3,6 +3,7 @@ package astmap
 import (
 	"go/ast"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -143,5 +144,45 @@ func TestExprString_Default(t *testing.T) {
 	want = "*ast.CallExpr"
 	if result != want {
 		t.Errorf("exprString(CallExpr) = %q, want %q", result, want)
+	}
+}
+
+func TestFileFuncs_LoopCalls(t *testing.T) {
+	funcs, err := FileFuncs(filepath.Join(testdataDir(), "loops.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []CallSite
+	for _, fn := range funcs {
+		if fn.Name == "loops" {
+			got = fn.LoopCalls
+		}
+	}
+	for i := range got {
+		got[i].Col = 0
+	}
+	want := []CallSite{
+		{Line: 19, Name: "Get", Expr: "s.Get", Method: true, TakesContext: true},
+		{Line: 21, Name: "ToUpper", Expr: "strings.ToUpper", Pkg: "strings"},
+		{Line: 22, Name: "lookup", Expr: "lookup"},
+		{Line: 24, Name: "count", Expr: "count"},
+		{Line: 27, Name: "next", Expr: "next"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("LoopCalls:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestDefaultImportName(t *testing.T) {
+	for p, want := range map[string]string{
+		"strings":                "strings",
+		"gopkg.in/yaml.v3":       "yaml",
+		"github.com/x/y/v2":      "y",
+		"github.com/x/go-thing":  "go_thing",
+		"example.com/pkg/v1beta": "v1beta",
+	} {
+		if got := defaultImportName(p); got != want {
+			t.Errorf("defaultImportName(%q) = %q, want %q", p, got, want)
+		}
 	}
 }

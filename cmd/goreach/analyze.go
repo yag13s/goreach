@@ -48,6 +48,8 @@ func runAnalyze(args []string) error {
 	opts := analysis.Options{PkgPrefixes: prefixes}
 
 	var rpt *report.Report
+	var dataDirs []string // where the counter files are, for the collection times
+	builds := 1
 
 	switch {
 	case *recursive:
@@ -55,6 +57,13 @@ func runAnalyze(args []string) error {
 		if groupErr != nil {
 			return groupErr
 		}
+		if len(groups) == 0 {
+			return fmt.Errorf("no coverage data found under %s", *coverDir)
+		}
+		for _, g := range groups {
+			dataDirs = append(dataDirs, g.Dirs...)
+		}
+		builds = len(groups)
 		rpt, err = multibuild.Analyze(groups, opts)
 	case *profilePath != "":
 		profiles, parseErr := covparse.ParseProfileFile(*profilePath)
@@ -67,12 +76,22 @@ func runAnalyze(args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
+		dataDirs = []string{*coverDir}
 		rpt, err = analysis.Run(profiles, opts)
 	}
 	if err != nil {
 		return err
 	}
 	rpt.GeneratedAt = time.Now().UTC()
+	if len(dataDirs) > 0 {
+		first, last, err := covparse.CounterTimes(dataDirs)
+		if err != nil {
+			return err
+		}
+		if !first.IsZero() {
+			rpt.Collection = &report.Collection{FirstWrite: first.UTC(), LastWrite: last.UTC(), Builds: builds}
+		}
+	}
 
 	// Filter last, once coverage from every build has been merged in.
 	rpt.FilterFunctions(filter)

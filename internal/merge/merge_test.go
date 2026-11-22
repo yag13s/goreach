@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -784,5 +785,65 @@ func TestOnto_CallsOfAmbiguousNamesStayWithBase(t *testing.T) {
 	fns := Onto(base, other).Packages[0].Files[0].Functions
 	if *fns[0].Calls != 1 || *fns[1].Calls != 2 {
 		t.Errorf("calls = %d, %d; want base's 1, 2", *fns[0].Calls, *fns[1].Calls)
+	}
+}
+
+func TestOnto_SumsBlocksFromSameSource(t *testing.T) {
+	n := func(v int) *int { return &v }
+	blocks := func(c1, c2 int) []report.Block {
+		return []report.Block{
+			{StartLine: 1, StartCol: 1, EndLine: 2, EndCol: 1, NumStatements: 1, Count: c1},
+			{StartLine: 2, StartCol: 1, EndLine: 3, EndCol: 1, NumStatements: 1, Count: c2},
+		}
+	}
+	mk := func(fn report.FuncReport) *report.Report {
+		return &report.Report{Packages: []report.PackageReport{{ImportPath: "p", Files: []report.FileReport{{
+			FileName: "p/a.go", Functions: []report.FuncReport{fn},
+		}}}}}
+	}
+	base := mk(report.FuncReport{Name: "F", TotalStatements: 2, CoveredStatements: 2, CoveragePercent: 100, Calls: n(2),
+		Blocks:    blocks(2, 10),
+		LoopCalls: []report.LoopCall{{Line: 2, Expr: "g", Executions: 10, CallerCalls: 2}},
+	})
+	same := mk(report.FuncReport{Name: "F", TotalStatements: 2, CoveredStatements: 2, CoveragePercent: 100, Calls: n(1),
+		Blocks: blocks(1, 50),
+		LoopCalls: []report.LoopCall{
+			{Line: 2, Expr: "g", Executions: 50, CallerCalls: 1},
+			{Line: 2, Expr: "h", Executions: 5, CallerCalls: 1},
+		},
+	})
+	moved := mk(report.FuncReport{Name: "F", TotalStatements: 2, CoveredStatements: 2, CoveragePercent: 100, Calls: n(4),
+		Blocks:    []report.Block{{StartLine: 5, StartCol: 1, EndLine: 6, EndCol: 1, Count: 4}},
+		LoopCalls: []report.LoopCall{{Line: 6, Expr: "g", Executions: 400, CallerCalls: 4}},
+	})
+
+	got := Onto(base, same, moved).Packages[0].Files[0].Functions[0]
+	if !reflect.DeepEqual(got.Blocks, blocks(3, 60)) {
+		t.Errorf("Blocks = %+v, want counts 3, 60", got.Blocks)
+	}
+	wantCalls := []report.LoopCall{
+		{Line: 2, Expr: "g", Executions: 60, CallerCalls: 3},
+		{Line: 2, Expr: "h", Executions: 5, CallerCalls: 1},
+	}
+	if !reflect.DeepEqual(got.LoopCalls, wantCalls) {
+		t.Errorf("LoopCalls = %+v, want %+v", got.LoopCalls, wantCalls)
+	}
+	if *got.Calls != 7 {
+		t.Errorf("Calls = %d, want 7", *got.Calls)
+	}
+}
+
+func TestMerge_Collection(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := &report.Report{GeneratedAt: t1, Collection: &report.Collection{FirstWrite: t1, LastWrite: t1.Add(time.Hour), Builds: 2}}
+	b := &report.Report{GeneratedAt: t1.Add(time.Hour), Collection: &report.Collection{FirstWrite: t1.Add(-time.Hour), LastWrite: t1.Add(30 * time.Minute), Builds: 1}}
+	c := &report.Report{GeneratedAt: t1}
+	got, err := Merge([]*report.Report{a, b, c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &report.Collection{FirstWrite: t1.Add(-time.Hour), LastWrite: t1.Add(time.Hour), Builds: 2}
+	if !reflect.DeepEqual(got.Collection, want) {
+		t.Errorf("Collection = %+v, want %+v", got.Collection, want)
 	}
 }

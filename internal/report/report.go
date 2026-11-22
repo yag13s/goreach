@@ -25,6 +25,23 @@ type Report struct {
 	Mode        string          `json:"mode"`
 	Total       CoverageStats   `json:"total"`
 	Packages    []PackageReport `json:"packages"`
+
+	// Collection describes when the coverage data was written. It is nil
+	// when that is unknown (a text profile, say).
+	Collection *Collection `json:"collection,omitempty"`
+}
+
+// Collection describes the coverage data a report was made from.
+type Collection struct {
+	// FirstWrite and LastWrite are when the earliest and the latest counter
+	// file was written, as recorded in the file names. Counts accumulated
+	// before the first write are included, so the time they span is somewhat
+	// longer than LastWrite - FirstWrite.
+	FirstWrite time.Time `json:"first_write"`
+	LastWrite  time.Time `json:"last_write"`
+
+	// Builds is how many distinct builds the data came from.
+	Builds int `json:"builds,omitempty"`
 }
 
 // CoverageStats holds aggregate coverage statistics.
@@ -66,6 +83,62 @@ type FuncReport struct {
 	// process that writes cumulative counters more than once (the flush SDK
 	// without Config.Clear) is counted more than once.
 	Calls *int `json:"calls,omitempty"`
+
+	// Blocks are the function's coverage blocks with their execution counts,
+	// for showing which lines run how often. They describe the newest build
+	// only and are absent when the data has no execution counts.
+	Blocks []Block `json:"blocks,omitempty"`
+
+	// LoopCalls are calls made from inside a loop, with how often they ran.
+	// A call that runs many times per call of this function is a candidate
+	// N+1 problem. Like Blocks, they describe the newest build only.
+	LoopCalls []LoopCall `json:"loop_calls,omitempty"`
+}
+
+// Block is a coverage block and how many times it ran.
+type Block struct {
+	StartLine     int `json:"start_line"`
+	StartCol      int `json:"start_col"`
+	EndLine       int `json:"end_line"`
+	EndCol        int `json:"end_col"`
+	NumStatements int `json:"num_statements"`
+	Count         int `json:"count"`
+}
+
+// LoopCall is a call made inside a loop. Only calls that ran are recorded,
+// and only those likely to matter: calls to functions in the report and
+// calls that take a context.Context (which usually do I/O).
+type LoopCall struct {
+	// Line is where the call is made in the calling function's file, and
+	// Expr the called expression as written there, such as "h.repo.Get".
+	Line int    `json:"line"`
+	Expr string `json:"expr"`
+
+	// CalleeFile and Callee identify the called function as listed in the
+	// report. They are empty when the syntax alone does not tell which
+	// function is called (several methods share the name, or the callee
+	// lives outside the report).
+	CalleeFile string `json:"callee_file,omitempty"`
+	Callee     string `json:"callee,omitempty"`
+
+	// TakesContext reports whether the call passes a context.Context.
+	TakesContext bool `json:"takes_context,omitempty"`
+
+	// Executions is how many times the call ran, and CallerCalls how many
+	// times the calling function was entered, both counted over the same
+	// data. Executions / CallerCalls is how often the call ran per call of
+	// the caller.
+	Executions  int `json:"executions"`
+	CallerCalls int `json:"caller_calls"`
+}
+
+// PerCall returns how many times the call ran per call of the caller, or 0
+// if the caller was never called.
+func (c LoopCall) PerCall() float64 {
+	if c.CallerCalls == 0 {
+		return 0
+	}
+	return float64(c.Executions) / float64(c.CallerCalls)
 }
 
 // UnreachedBlock describes a contiguous block of unreached code.
@@ -110,6 +183,10 @@ func (r *Report) Write(w io.Writer, pretty bool) error {
 // Clone returns a deep copy of the report.
 func (r *Report) Clone() *Report {
 	c := *r
+	if r.Collection != nil {
+		col := *r.Collection
+		c.Collection = &col
+	}
 	c.Packages = slices.Clone(r.Packages)
 	for i := range c.Packages {
 		pkg := &c.Packages[i]
@@ -121,6 +198,8 @@ func (r *Report) Clone() *Report {
 				fn := &file.Functions[k]
 				fn.UnreachedBlocks = slices.Clone(fn.UnreachedBlocks)
 				fn.LatestUnreachedBlocks = slices.Clone(fn.LatestUnreachedBlocks)
+				fn.Blocks = slices.Clone(fn.Blocks)
+				fn.LoopCalls = slices.Clone(fn.LoopCalls)
 				if fn.Calls != nil {
 					calls := *fn.Calls
 					fn.Calls = &calls

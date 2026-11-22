@@ -34,6 +34,7 @@ func main() {
 	mux.HandleFunc("GET /hello", handleHello)
 	mux.HandleFunc("GET /calc", handleCalc)
 	mux.HandleFunc("GET /health", handleHealth)
+	mux.HandleFunc("GET /items", handleItems)
 
 	srv := &http.Server{Addr: ":8080", Handler: mux}
 
@@ -51,6 +52,7 @@ func main() {
 	log.Println("  curl http://localhost:8080/hello?name=Alice")
 	log.Println("  curl http://localhost:8080/calc?op=add&a=3&b=4")
 	log.Println("  curl http://localhost:8080/health")
+	log.Println("  curl http://localhost:8080/items")
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
@@ -88,6 +90,42 @@ func formatCalcResult(op string, a, b, result int) map[string]any {
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleItems lists items with whether each is liked. It looks the likes up
+// one item at a time, an N+1 pattern goreach reports as a loop call.
+func handleItems(w http.ResponseWriter, r *http.Request) {
+	items := listItems()
+	for i := range items {
+		items[i].Liked = likes.HasLike(r.Context(), items[i].ID)
+	}
+	json.NewEncoder(w).Encode(items)
+}
+
+type item struct {
+	ID    string `json:"id"`
+	Liked bool   `json:"liked"`
+}
+
+func listItems() []item {
+	items := make([]item, 20)
+	for i := range items {
+		items[i].ID = "item-" + strconv.Itoa(i)
+	}
+	return items
+}
+
+// likeStore stands in for a database table.
+type likeStore struct{ liked map[string]bool }
+
+var likes = &likeStore{liked: map[string]bool{"item-3": true, "item-7": true}}
+
+// HasLike is one database read.
+func (s *likeStore) HasLike(ctx context.Context, id string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	return s.liked[id]
 }
 
 // --- business logic (coverage targets) ---
